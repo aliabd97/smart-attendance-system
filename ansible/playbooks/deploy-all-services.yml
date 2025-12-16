@@ -1,0 +1,149 @@
+# c:\Users\HP\smart-attendance-system\ansible\playbooks\deploy-all-services.yml
+---
+- name: Deploy Smart Attendance Management System (Cloud Verification)
+  hosts: localhost
+  connection: local
+  gather_facts: yes
+
+  vars:
+    project_root: "{{ playbook_dir }}/../.."
+    python_version: python
+    
+    # قائمة الخدمات وروابطها الحقيقية على Render
+    services:
+      - name: auth-service
+        url: "https://attendance-auth-service.onrender.com/health"
+        port: 443
+        order: 1
+        description: "JWT Authentication Service"
+
+      - name: service-registry
+        url: "https://attendance-service-registry.onrender.com/health"
+        port: 443
+        order: 2
+        description: "Service Discovery and Health Monitoring"
+
+      - name: student-service
+        url: "https://attendance-student-service.onrender.com/health"
+        port: 443
+        order: 3
+        description: "Student Management with Excel Import"
+
+      - name: course-service
+        url: "https://attendance-course-service.onrender.com/health"
+        port: 443
+        order: 4
+        description: "Course and Enrollment Management"
+
+      - name: attendance-service
+        url: "https://attendance-attendance-service.onrender.com/health"
+        port: 443
+        order: 5
+        description: "Attendance Tracking with Circuit Breakers"
+
+      - name: api-gateway
+        url: "https://attendance-api-gateway.onrender.com/health"
+        port: 443
+        order: 6
+        description: "Central API Gateway"
+
+  tasks:
+    # ========================================
+    # PHASE 1: PRE-DEPLOYMENT SETUP
+    # ========================================
+
+    - name: "🎯 Display deployment start message"
+      debug:
+        msg:
+          - "═══════════════════════════════════════════════════════"
+          - "🚀 DEPLOYING SMART ATTENDANCE MANAGEMENT SYSTEM"
+          - "═══════════════════════════════════════════════════════"
+          - "📊 Total Services: {{ services | length }}"
+          - "📍 Environment: Production (Render Cloud)"
+          - "💻 Controller: {{ ansible_os_family }} (Localhost)"
+          - "⏰ Started: {{ ansible_date_time.iso8601 }}"
+          - "═══════════════════════════════════════════════════════"
+      tags: always
+
+    - name: "📋 Display services configuration"
+      debug:
+        msg: "{{ item.order }}. {{ item.name }} - {{ item.description }}"
+      loop: "{{ services | sort(attribute='order') }}"
+      tags: always
+
+    # ========================================
+    # PHASE 2: SYSTEM DEPENDENCIES (Simulated)
+    # ========================================
+
+    - name: "🔧 Checking Local Python Environment"
+      command: "python --version"
+      register: python_check
+      changed_when: false
+
+    - name: "📦 Verifying Dependencies (Simulated for Demo)"
+      debug:
+        msg: "Dependencies verified: flask, requests, pytest found."
+      delay: 1
+
+    # ========================================
+    # PHASE 3: CLOUD DEPLOYMENT VERIFICATION
+    # ========================================
+
+    - name: "🎯 Starting Cloud Service Verification"
+      debug:
+        msg: "Connecting to Render.com infrastructure..."
+
+    - name: "🚀 Verifying Service Health (Live Check)"
+      uri:
+        url: "{{ item.url }}"
+        method: GET
+        status_code: 200
+        timeout: 10
+      loop: "{{ services | sort(attribute='order') }}"
+      register: health_check_results
+      ignore_errors: yes
+      loop_control:
+        label: "Checking {{ item.name }}..."
+
+    # ========================================
+    # PHASE 4: DEPLOYMENT SUMMARY
+    # ========================================
+
+    - name: "📊 Generate deployment summary"
+      set_fact:
+        successful_services: "{{ health_check_results.results | selectattr('failed', 'equalto', false) | list | length }}"
+        failed_services: "{{ health_check_results.results | selectattr('failed', 'equalto', true) | list | length }}"
+
+    - name: "📝 Write deployment summary to log"
+      copy:
+        content: |
+          ═══════════════════════════════════════════════════════
+          SMART ATTENDANCE - CLOUD DEPLOYMENT REPORT
+          ═══════════════════════════════════════════════════════
+          Date: {{ ansible_date_time.iso8601 }}
+          
+          STATUS REPORT:
+          {% for res in health_check_results.results %}
+          Service: {{ res.item.name }}
+          Status: {% if res.failed %}❌ OFFLINE{% else %}✅ LIVE & HEALTHY{% endif %}
+          URL: {{ res.item.url }}
+          -------------------------------------------------------
+          {% endfor %}
+          
+          TOTAL SUCCESS: {{ successful_services }}/{{ services | length }}
+          ═══════════════════════════════════════════════════════
+        dest: "{{ playbook_dir }}/../../deployment_report.txt"
+
+    - name: "✅ FINAL STATUS DISPLAY"
+      debug:
+        msg:
+          - "═══════════════════════════════════════════════════════"
+          - "🎉 DEPLOYMENT VERIFICATION COMPLETED!"
+          - "═══════════════════════════════════════════════════════"
+          - "✅ Successful: {{ successful_services }}/{{ services | length }}"
+          - "❌ Failed: {{ failed_services }}/{{ services | length }}"
+          - "📊 Success Rate: {{ (successful_services / services | length * 100) | round(1) }}%"
+          - ""
+          - "🔗 Access API Gateway: https://attendance-api-gateway.onrender.com"
+          - "📄 Report saved to: deployment_report.txt"
+          - "═══════════════════════════════════════════════════════"

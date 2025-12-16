@@ -1,0 +1,305 @@
+# Keep Services Alive Playbook
+# Smart Attendance Management System
+# Prevents Render.com services from sleeping after 15 minutes of inactivity
+
+---
+- name: Keep Render.com Services Alive
+  hosts: localhost
+  gather_facts: yes
+
+  vars:
+    # Render.com service URLs
+    render_services:
+      - name: "API Gateway"
+        url: "https://attendance-api-gateway.onrender.com"
+        health_endpoint: "/"
+
+      - name: "Auth Service"
+        url: "https://attendance-auth-service.onrender.com"
+        health_endpoint: "/health"
+
+      - name: "Student Service"
+        url: "https://attendance-student-service.onrender.com"
+        health_endpoint: "/health"
+
+      - name: "Course Service"
+        url: "https://attendance-course-service.onrender.com"
+        health_endpoint: "/health"
+
+      - name: "Attendance Service"
+        url: "https://attendance-attendance-service.onrender.com"
+        health_endpoint: "/health"
+
+      - name: "Service Registry"
+        url: "https://attendance-service-registry.onrender.com"
+        health_endpoint: "/health"
+
+    # Keep-alive settings
+    ping_interval_seconds: 300  # 5 minutes
+    ping_timeout: 30            # 30 seconds per request
+    max_retries: 3              # Retry failed requests 3 times
+    log_file: "/var/log/render-keep-alive.log"
+
+  tasks:
+    # ========================================
+    # PHASE 1: INITIALIZATION
+    # ========================================
+
+    - name: "🚀 Keep-Alive Service Started"
+      debug:
+        msg:
+          - "═══════════════════════════════════════════════════════"
+          - "🔄 RENDER.COM KEEP-ALIVE SERVICE"
+          - "═══════════════════════════════════════════════════════"
+          - "📊 Services to Monitor: {{ render_services | length }}"
+          - "⏱️  Ping Interval: {{ ping_interval_seconds }}s ({{ ping_interval_seconds / 60 }} minutes)"
+          - "⏰ Started: {{ ansible_date_time.iso8601 }}"
+          - "📝 Log File: {{ log_file }}"
+          - "═══════════════════════════════════════════════════════"
+      tags:
+        - always
+
+    - name: "📁 Create log directory"
+      file:
+        path: "{{ log_file | dirname }}"
+        state: directory
+        mode: '0755'
+      become: yes
+      failed_when: false
+      tags:
+        - setup
+
+    - name: "📝 Initialize log file"
+      lineinfile:
+        path: "{{ log_file }}"
+        line: "{{ ansible_date_time.iso8601 }} - Keep-Alive Service Started - Monitoring {{ render_services | length }} services"
+        create: yes
+        mode: '0644'
+      become: yes
+      failed_when: false
+      tags:
+        - setup
+
+    # ========================================
+    # PHASE 2: INITIAL HEALTH CHECK
+    # ========================================
+
+    - name: "🏥 Initial health check for all services"
+      uri:
+        url: "{{ item.url }}{{ item.health_endpoint }}"
+        method: GET
+        status_code: [200, 201, 301, 302, 404]
+        timeout: "{{ ping_timeout }}"
+        return_content: no
+      loop: "{{ render_services }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: initial_health_check
+      failed_when: false
+      retries: "{{ max_retries }}"
+      delay: 2
+      tags:
+        - health_check
+
+    - name: "📊 Initial Health Status"
+      debug:
+        msg: "{{ item.item.name }}: {{ 'ONLINE ✅' if not item.failed else 'OFFLINE ❌' }} ({{ item.status | default('UNREACHABLE') }})"
+      loop: "{{ initial_health_check.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      tags:
+        - health_check
+
+    - name: "📝 Log initial health status"
+      lineinfile:
+        path: "{{ log_file }}"
+        line: "{{ ansible_date_time.iso8601 }} - Initial Check - {{ item.item.name }}: {{ 'ONLINE' if not item.failed else 'OFFLINE' }}"
+      loop: "{{ initial_health_check.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      become: yes
+      failed_when: false
+      tags:
+        - logging
+
+    # ========================================
+    # PHASE 3: CONTINUOUS KEEP-ALIVE LOOP
+    # ========================================
+
+    - name: "🔄 Keep-Alive Loop Information"
+      debug:
+        msg:
+          - "Starting continuous monitoring..."
+          - "Services will be pinged every {{ ping_interval_seconds / 60 }} minutes"
+          - "Press Ctrl+C to stop"
+      tags:
+        - loop
+
+    # Note: This is a one-time ping. For continuous monitoring, run this playbook as a cron job or background process
+    - name: "🏓 Ping all services"
+      uri:
+        url: "{{ item.url }}{{ item.health_endpoint }}"
+        method: GET
+        status_code: [200, 201, 301, 302, 404]
+        timeout: "{{ ping_timeout }}"
+        return_content: yes
+      loop: "{{ render_services }}"
+      loop_control:
+        label: "Pinging {{ item.name }}..."
+      register: ping_results
+      failed_when: false
+      retries: "{{ max_retries }}"
+      delay: 2
+      tags:
+        - ping
+
+    - name: "📊 Ping Results"
+      debug:
+        msg:
+          - "Service: {{ item.item.name }}"
+          - "URL: {{ item.item.url }}{{ item.item.health_endpoint }}"
+          - "Status: {{ 'SUCCESS ✅' if not item.failed else 'FAILED ❌' }}"
+          - "HTTP Code: {{ item.status | default('N/A') }}"
+          - "Response Time: {{ item.elapsed | default('N/A') }}s"
+      loop: "{{ ping_results.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      tags:
+        - ping
+
+    # ========================================
+    # PHASE 4: LOGGING AND REPORTING
+    # ========================================
+
+    - name: "📊 Calculate ping statistics"
+      set_fact:
+        successful_pings: "{{ ping_results.results | rejectattr('failed', 'equalto', true) | list | length }}"
+        failed_pings: "{{ ping_results.results | selectattr('failed', 'equalto', true) | list | length }}"
+        success_rate: "{{ (ping_results.results | rejectattr('failed', 'equalto', true) | list | length | float / render_services | length * 100) | round(1) }}"
+      tags:
+        - stats
+
+    - name: "📝 Log ping results"
+      lineinfile:
+        path: "{{ log_file }}"
+        line: "{{ ansible_date_time.iso8601 }} - Ping - {{ item.item.name }}: {{ 'SUCCESS' if not item.failed else 'FAILED' }} ({{ item.status | default('N/A') }}) - {{ item.elapsed | default('N/A') }}s"
+      loop: "{{ ping_results.results }}"
+      loop_control:
+        label: "{{ item.item.name }}"
+      become: yes
+      failed_when: false
+      tags:
+        - logging
+
+    - name: "📊 Write ping summary"
+      copy:
+        content: |
+          ═══════════════════════════════════════════════════════
+          KEEP-ALIVE PING SUMMARY
+          ═══════════════════════════════════════════════════════
+
+          Ping Time: {{ ansible_date_time.iso8601 }}
+
+          RESULTS:
+          {% for item in ping_results.results %}
+          {{ loop.index }}. {{ item.item.name }}
+             URL: {{ item.item.url }}{{ item.item.health_endpoint }}
+             Status: {{ 'SUCCESS ✅' if not item.failed else 'FAILED ❌' }}
+             HTTP Code: {{ item.status | default('N/A') }}
+             Response Time: {{ item.elapsed | default('N/A') }}s
+
+          {% endfor %}
+
+          STATISTICS:
+          - Total Services: {{ render_services | length }}
+          - Successful: {{ successful_pings }}
+          - Failed: {{ failed_pings }}
+          - Success Rate: {{ success_rate }}%
+
+          {% if failed_pings | int > 0 %}
+          ⚠️  FAILED SERVICES:
+          {% for item in ping_results.results %}
+          {% if item.failed %}
+          - {{ item.item.name }}: {{ item.msg | default('Connection timeout or unreachable') }}
+          {% endif %}
+          {% endfor %}
+          {% endif %}
+
+          NEXT PING: In {{ ping_interval_seconds / 60 }} minutes
+
+          ═══════════════════════════════════════════════════════
+        dest: "/tmp/keep-alive-summary.txt"
+        mode: '0644'
+      tags:
+        - reporting
+
+    - name: "✅ Display final ping status"
+      debug:
+        msg:
+          - "═══════════════════════════════════════════════════════"
+          - "🏓 PING COMPLETED!"
+          - "═══════════════════════════════════════════════════════"
+          - "✅ Successful: {{ successful_pings }}/{{ render_services | length }}"
+          - "❌ Failed: {{ failed_pings }}/{{ render_services | length }}"
+          - "📊 Success Rate: {{ success_rate }}%"
+          - ""
+          - "📝 Full Log: {{ log_file }}"
+          - "📄 Summary: /tmp/keep-alive-summary.txt"
+          - ""
+          - "🔄 To run continuously, use one of these methods:"
+          - "   1. Cron job: */5 * * * * ansible-playbook keep-services-alive.yml"
+          - "   2. Background: nohup ansible-playbook keep-services-alive.yml &"
+          - "   3. UptimeRobot: https://uptimerobot.com (recommended)"
+          - "═══════════════════════════════════════════════════════"
+      tags:
+        - always
+
+    # ========================================
+    # PHASE 5: ALERTS (Optional)
+    # ========================================
+
+    - name: "🚨 Alert if services are down"
+      debug:
+        msg:
+          - "WARNING: {{ failed_pings }} service(s) are not responding!"
+          - "Failed services:"
+          - "{% for item in ping_results.results %}{% if item.failed %}- {{ item.item.name }}{% endif %}{% endfor %}"
+          - ""
+          - "Action required: Check Render.com dashboard"
+      when: failed_pings | int > 0
+      tags:
+        - alert
+
+    # Optional: Send email/Slack notification (requires additional setup)
+    # - name: "📧 Send alert notification"
+    #   mail:
+    #     to: your-email@example.com
+    #     subject: "Render Services Alert: {{ failed_pings }} services down"
+    #     body: "{{ ping_results | to_nice_json }}"
+    #   when: failed_pings | int > 0
+    #   tags:
+    #     - alert
+
+---
+
+# USAGE INSTRUCTIONS:
+#
+# 1. ONE-TIME PING:
+#    ansible-playbook playbooks/keep-services-alive.yml
+#
+# 2. BACKGROUND PROCESS:
+#    nohup ansible-playbook playbooks/keep-services-alive.yml >> /var/log/keep-alive.log 2>&1 &
+#
+# 3. CRON JOB (Every 5 minutes):
+#    */5 * * * * cd /path/to/ansible && ansible-playbook playbooks/keep-services-alive.yml >> /var/log/keep-alive.log 2>&1
+#
+# 4. SYSTEMD SERVICE:
+#    Create /etc/systemd/system/render-keep-alive.service
+#    Enable: sudo systemctl enable render-keep-alive
+#    Start: sudo systemctl start render-keep-alive
+#
+# 5. UPTIMEROBOT (RECOMMENDED):
+#    - Sign up at https://uptimerobot.com (free)
+#    - Add all 6 service URLs as monitors
+#    - Set interval to 5 minutes
+#    - Services will stay awake 24/7

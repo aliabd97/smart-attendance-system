@@ -1,0 +1,187 @@
+# Deploy Single Service Task File
+# This file contains tasks to deploy a single microservice
+# It is included by deploy-all-services.yml for each service
+
+---
+# Task 1: Create service directory
+- name: "📁 Create directory for {{ service.name }}"
+  file:
+    path: "{{ project_root }}/{{ service.name }}"
+    state: directory
+    mode: '0755'
+    owner: "{{ ansible_user_id }}"
+  tags:
+    - setup
+    - directories
+
+# Task 2: Copy common utilities first
+- name: "📦 Copy common utilities for {{ service.name }}"
+  copy:
+    src: "{{ playbook_dir }}/../../common/"
+    dest: "{{ project_root }}/common/"
+    mode: '0644'
+  register: common_copy_result
+  tags:
+    - setup
+    - copy
+
+# Task 3: Copy service files
+- name: "📋 Copy {{ service.name }} files"
+  synchronize:
+    src: "{{ playbook_dir }}/../../{{ service.name }}/"
+    dest: "{{ project_root }}/{{ service.name }}/"
+    delete: no
+    recursive: yes
+  delegate_to: localhost
+  register: service_copy_result
+  tags:
+    - setup
+    - copy
+
+# Task 4: Ensure requirements.txt exists
+- name: "✅ Check if {{ service.name }}/requirements.txt exists"
+  stat:
+    path: "{{ project_root }}/{{ service.name }}/requirements.txt"
+  register: requirements_file
+  tags:
+    - verify
+
+- name: "⚠️  Warning if requirements.txt missing for {{ service.name }}"
+  debug:
+    msg: "WARNING: requirements.txt not found for {{ service.name }}"
+  when: not requirements_file.stat.exists
+  tags:
+    - verify
+
+# Task 5: Create virtual environment
+- name: "🐍 Create virtual environment for {{ service.name }}"
+  pip:
+    name: pip
+    state: latest
+    virtualenv: "{{ project_root }}/{{ service.name }}/venv"
+    virtualenv_command: "{{ python_version }} -m venv"
+  when: requirements_file.stat.exists
+  tags:
+    - setup
+    - venv
+
+# Task 6: Install service dependencies
+- name: "📥 Install dependencies for {{ service.name }}"
+  pip:
+    requirements: "{{ project_root }}/{{ service.name }}/requirements.txt"
+    virtualenv: "{{ project_root }}/{{ service.name }}/venv"
+    state: present
+  when:
+    - requirements_file.stat.exists
+    - service_copy_result.changed or common_copy_result.changed
+  register: pip_install_result
+  tags:
+    - setup
+    - dependencies
+
+# Task 7: Check if service is already running on the port
+- name: "🔍 Check if port {{ service.port }} is in use"
+  shell: "lsof -ti:{{ service.port }} || echo 'free'"
+  register: port_check
+  changed_when: false
+  failed_when: false
+  tags:
+    - verify
+    - runtime
+
+# Task 8: Stop service if already running
+- name: "🛑 Stop {{ service.name }} if running on port {{ service.port }}"
+  shell: "kill -15 $(lsof -ti:{{ service.port }}) && sleep 2 || true"
+  when: port_check.stdout != "free" and port_check.stdout != ""
+  register: stop_result
+  tags:
+    - runtime
+    - stop
+
+- name: "⏳ Wait for port {{ service.port }} to be free"
+  wait_for:
+    port: "{{ service.port }}"
+    state: stopped
+    timeout: 10
+  when: stop_result.changed
+  tags:
+    - runtime
+
+# Task 9: Set environment variables for service
+- name: "🔧 Create .env file for {{ service.name }}"
+  template:
+    src: "{{ playbook_dir }}/templates/service.env.j2"
+    dest: "{{ project_root }}/{{ service.name }}/.env"
+    mode: '0600'
+  when: false  # Disabled for now - services use defaults
+  tags:
+    - config
+
+# Task 10: Start the service
+- name: "🚀 Start {{ service.name }} on port {{ service.port }}"
+  shell: |
+    cd {{ project_root }}/{{ service.name }}
+    source venv/bin/activate
+    export PYTHONPATH={{ project_root }}:$PYTHONPATH
+    export PORT={{ service.port }}
+    export FLASK_ENV=development
+    nohup python app.py > {{ project_root }}/{{ service.name }}/service.log 2>&1 &
+    echo $! > {{ project_root }}/{{ service.name }}/service.pid
+    sleep 1
+  args:
+    executable: /bin/bash
+  when: requirements_file.stat.exists
+  register: start_result
+  tags:
+    - runtime
+    - start
+
+# Task 11: Verify service started
+- name: "⏱️  Wait for {{ service.name }} to start on port {{ service.port }}"
+  wait_for:
+    port: "{{ service.port }}"
+    state: started
+    timeout: 15
+    delay: 1
+  when: start_result.changed
+  tags:
+    - verify
+    - runtime
+
+# Task 12: Check if service responds to HTTP
+- name: "🏥 Health check for {{ service.name }}"
+  uri:
+    url: "http://localhost:{{ service.port }}/"
+    status_code: [200, 201, 301, 302]
+    timeout: 5
+  register: health_check
+  retries: 3
+  delay: 2
+  until: health_check is succeeded
+  when: start_result.changed
+  failed_when: false
+  tags:
+    - verify
+    - health
+
+# Task 13: Log deployment
+- name: "📝 Log deployment of {{ service.name }}"
+  lineinfile:
+    path: "{{ project_root }}/deployment.log"
+    line: "{{ ansible_date_time.iso8601 }} - {{ service.name }} deployed on port {{ service.port }} - Status: {{ 'SUCCESS' if health_check is succeeded else 'STARTED' }}"
+    create: yes
+    mode: '0644'
+  tags:
+    - logging
+
+# Task 14: Display deployment status
+- name: "✅ {{ service.name }} deployment status"
+  debug:
+    msg:
+      - "Service: {{ service.name }}"
+      - "Port: {{ service.port }}"
+      - "Status: {{ 'RUNNING ✅' if health_check is succeeded else 'STARTED (health check pending) ⚠️' }}"
+      - "Log: {{ project_root }}/{{ service.name }}/service.log"
+      - "PID file: {{ project_root }}/{{ service.name }}/service.pid"
+  tags:
+    - info

@@ -1,0 +1,179 @@
+# Render.com Blueprint Configuration
+# Smart Attendance Management System
+# Free Plan - Without Persistent Disks
+
+services:
+  # API Gateway
+  - type: web
+    name: attendance-api-gateway
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r api-gateway/requirements.txt
+    startCommand: cd api-gateway && gunicorn --bind 0.0.0.0:$PORT app:app
+    envVars:
+      - key: PORT
+        value: 5000
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: STUDENT_SERVICE_URL
+        value: https://attendance-student-service.onrender.com
+      - key: COURSE_SERVICE_URL
+        value: https://attendance-course-service.onrender.com
+      - key: ATTENDANCE_SERVICE_URL
+        value: https://attendance-attendance-service.onrender.com
+      - key: AUTH_SERVICE_URL
+        value: https://attendance-auth-service.onrender.com
+      - key: REGISTRY_SERVICE_URL
+        value: https://attendance-service-registry.onrender.com
+      - key: FLASK_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.11.0
+
+  # Auth Service
+  - type: web
+    name: attendance-auth-service
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r auth-service/requirements.txt
+    startCommand: cd auth-service && gunicorn --bind 0.0.0.0:$PORT app:app
+    envVars:
+      - key: PORT
+        value: 5007
+      - key: JWT_SECRET_KEY
+        fromService:
+          type: web
+          name: attendance-api-gateway
+          envVarKey: JWT_SECRET_KEY
+      - key: FLASK_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.11.0
+
+  # Student Service
+  - type: web
+    name: attendance-student-service
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r student-service/requirements.txt
+    startCommand: cd student-service && gunicorn --bind 0.0.0.0:$PORT app:app
+    envVars:
+      - key: PORT
+        value: 5001
+      - key: FLASK_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.11.0
+
+  # Course Service
+  - type: web
+    name: attendance-course-service
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r course-service/requirements.txt
+    startCommand: cd course-service && gunicorn --bind 0.0.0.0:$PORT app:app
+    envVars:
+      - key: PORT
+        value: 5002
+      - key: FLASK_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.11.0
+
+  # Attendance Service
+  - type: web
+    name: attendance-attendance-service
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r attendance-service/requirements.txt
+    startCommand: cd attendance-service && gunicorn --bind 0.0.0.0:$PORT app:app
+    envVars:
+      - key: PORT
+        value: 5005
+      - key: STUDENT_SERVICE_URL
+        value: https://attendance-student-service.onrender.com
+      - key: COURSE_SERVICE_URL
+        value: https://attendance-course-service.onrender.com
+      - key: FLASK_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.11.0
+
+  # Service Registry
+  - type: web
+    name: attendance-service-registry
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r service-registry/requirements.txt
+    startCommand: cd service-registry && gunicorn --bind 0.0.0.0:$PORT app:app
+    envVars:
+      - key: PORT
+        value: 5008
+      - key: FLASK_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.11.0
+
+  # Bubble Sheet Generator Service
+  - type: web
+    name: attendance-bubble-sheet-generator
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r bubble-sheet-generator/requirements.txt
+    startCommand: cd bubble-sheet-generator && gunicorn --bind 0.0.0.0:$PORT app:app
+    envVars:
+      - key: PORT
+        value: 5003
+      - key: FLASK_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.11.0
+
+  # PDF Processing Service (OMR)
+  - type: web
+    name: attendance-pdf-processing
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r pdf-processing-service/requirements.txt
+    startCommand: cd pdf-processing-service && gunicorn --bind 0.0.0.0:$PORT app:app
+    envVars:
+      - key: PORT
+        value: 5004
+      - key: BUBBLE_SHEET_SERVICE_URL
+        value: https://attendance-bubble-sheet-generator.onrender.com
+      - key: ATTENDANCE_SERVICE_URL
+        value: https://attendance-attendance-service.onrender.com
+      - key: FLASK_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.11.0
+
+  # Reporting Service
+  - type: web
+    name: attendance-reporting-service
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r reporting-service/requirements.txt
+    startCommand: cd reporting-service && gunicorn --bind 0.0.0.0:$PORT app:app
+    envVars:
+      - key: PORT
+        value: 5007
+      - key: STUDENT_SERVICE_URL
+        value: https://attendance-student-service.onrender.com
+      - key: COURSE_SERVICE_URL
+        value: https://attendance-course-service.onrender.com
+      - key: ATTENDANCE_SERVICE_URL
+        value: https://attendance-attendance-service.onrender.com
+      - key: FLASK_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: 3.11.0

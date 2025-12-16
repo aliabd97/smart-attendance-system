@@ -1,0 +1,152 @@
+version: '3.8'
+
+services:
+  # RabbitMQ Message Broker
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"      # AMQP port
+      - "15672:15672"    # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin123
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - attendance-network
+
+  # Service Registry (Port 5008)
+  service-registry:
+    build: ./service-registry
+    container_name: service-registry
+    ports:
+      - "5008:5008"
+    environment:
+      - FLASK_ENV=production
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5008/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - attendance-network
+
+  # Auth Service (Port 5007)
+  auth-service:
+    build: ./auth-service
+    container_name: auth-service
+    ports:
+      - "5007:5007"
+    environment:
+      - FLASK_ENV=production
+      - JWT_SECRET_KEY=change-this-in-production-2024
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5007/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - attendance-network
+
+  # Student Service (Port 5001)
+  student-service:
+    build: ./student-service
+    container_name: student-service
+    ports:
+      - "5001:5001"
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+    depends_on:
+      - rabbitmq
+    volumes:
+      - ./student-service/students.db:/app/students.db
+      - ./student-service/uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - attendance-network
+
+  # Course Service (Port 5002)
+  course-service:
+    build: ./course-service
+    container_name: course-service
+    ports:
+      - "5002:5002"
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+    depends_on:
+      - rabbitmq
+    volumes:
+      - ./course-service/courses.db:/app/courses.db
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5002/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - attendance-network
+
+  # Attendance Service (Port 5005)
+  attendance-service:
+    build: ./attendance-service
+    container_name: attendance-service
+    ports:
+      - "5005:5005"
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - STUDENT_SERVICE_URL=http://student-service:5001
+      - COURSE_SERVICE_URL=http://course-service:5002
+    depends_on:
+      - rabbitmq
+      - student-service
+      - course-service
+    volumes:
+      - ./attendance-service/attendance.db:/app/attendance.db
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5005/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - attendance-network
+
+  # API Gateway (Port 5000)
+  api-gateway:
+    build: ./api-gateway
+    container_name: api-gateway
+    ports:
+      - "5000:5000"
+    environment:
+      - JWT_SECRET_KEY=change-this-in-production-2024
+      - STUDENT_SERVICE_URL=http://student-service:5001
+      - COURSE_SERVICE_URL=http://course-service:5002
+      - ATTENDANCE_SERVICE_URL=http://attendance-service:5005
+      - AUTH_SERVICE_URL=http://auth-service:5007
+      - REGISTRY_SERVICE_URL=http://service-registry:5008
+    depends_on:
+      - auth-service
+      - student-service
+      - course-service
+      - attendance-service
+      - service-registry
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - attendance-network
+
+networks:
+  attendance-network:
+    driver: bridge
+
+volumes:
+  rabbitmq-data:
