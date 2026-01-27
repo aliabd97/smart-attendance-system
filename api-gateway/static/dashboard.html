@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام الحضور الذكي</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 400px;
+            width: 90%;
+        }
+
+        h1 {
+            text-align: center;
+            color: #667eea;
+            margin-bottom: 30px;
+            font-size: 28px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        button {
+            width: 100%;
+            padding: 14px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        .error {
+            background: #ff4444;
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .success {
+            background: #00C851;
+            color: white;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        #dashboard {
+            display: none;
+        }
+
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .user-info {
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .logout-btn {
+            background: #ff4444;
+            padding: 8px 20px;
+            width: auto;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Login Form -->
+        <div id="loginForm">
+            <h1>🎓 نظام الحضور الذكي</h1>
+            <div class="error" id="error"></div>
+            <div class="success" id="success"></div>
+
+            <form onsubmit="login(event)">
+                <div class="form-group">
+                    <label>اسم المستخدم</label>
+                    <input type="text" id="username" required>
+                </div>
+
+                <div class="form-group">
+                    <label>كلمة المرور</label>
+                    <input type="password" id="password" required>
+                </div>
+
+                <button type="submit">دخول</button>
+            </form>
+        </div>
+
+        <!-- Dashboard -->
+        <div id="dashboard">
+            <div class="dashboard-header">
+                <div class="user-info">
+                    مرحباً، <span id="displayName"></span>
+                </div>
+                <button class="logout-btn" onclick="logout()">خروج</button>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="studentsCount">0</div>
+                    <div class="stat-label">الطلاب</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="coursesCount">0</div>
+                    <div class="stat-label">المواد</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="attendanceCount">0</div>
+                    <div class="stat-label">سجلات الحضور</div>
+                </div>
+            </div>
+
+            <div style="text-align: center; margin-top: 30px;">
+                <p style="color: #666;">النظام يعمل بنجاح! ✅</p>
+                <p style="color: #999; font-size: 14px; margin-top: 10px;">API Gateway: http://localhost:5000</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = window.location.origin;
+
+        async function login(event) {
+            event.preventDefault();
+
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const response = await fetch(`${API_URL}/api/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    localStorage.setItem('token', data.token);
+                    localStorage.setItem('username', data.username);
+                    localStorage.setItem('role', data.role);
+
+                    showSuccess('تم تسجيل الدخول بنجاح!');
+                    setTimeout(() => {
+                        document.getElementById('loginForm').style.display = 'none';
+                        document.getElementById('dashboard').style.display = 'block';
+                        document.getElementById('displayName').textContent = data.username;
+                        loadStats();
+                    }, 500);
+                } else {
+                    showError(data.error || 'خطأ في تسجيل الدخول');
+                }
+            } catch (error) {
+                showError('فشل الاتصال بالخادم');
+                console.error(error);
+            }
+        }
+
+        async function loadStats() {
+            const token = localStorage.getItem('token');
+
+            try {
+                // Load students count
+                const studentsRes = await fetch(`${API_URL}/api/students/students`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (studentsRes.ok) {
+                    const students = await studentsRes.json();
+                    const count = Array.isArray(students) ? students.length : (students.students?.length || 0);
+                    document.getElementById('studentsCount').textContent = count;
+                }
+
+                // Load courses count
+                const coursesRes = await fetch(`${API_URL}/api/courses/courses`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (coursesRes.ok) {
+                    const courses = await coursesRes.json();
+                    const count = Array.isArray(courses) ? courses.length : (courses.courses?.length || 0);
+                    document.getElementById('coursesCount').textContent = count;
+                }
+
+                // Load attendance count
+                const attendanceRes = await fetch(`${API_URL}/api/attendance/attendance`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (attendanceRes.ok) {
+                    const attendance = await attendanceRes.json();
+                    const count = Array.isArray(attendance) ? attendance.length : (attendance.records?.length || 0);
+                    document.getElementById('attendanceCount').textContent = count;
+                }
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        function logout() {
+            localStorage.clear();
+            document.getElementById('loginForm').style.display = 'block';
+            document.getElementById('dashboard').style.display = 'none';
+            document.getElementById('username').value = '';
+            document.getElementById('password').value = '';
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => errorDiv.style.display = 'none', 3000);
+        }
+
+        function showSuccess(message) {
+            const successDiv = document.getElementById('success');
+            successDiv.textContent = message;
+            successDiv.style.display = 'block';
+            setTimeout(() => successDiv.style.display = 'none', 3000);
+        }
+
+        // Check if already logged in
+        if (localStorage.getItem('token')) {
+            document.getElementById('loginForm').style.display = 'none';
+            document.getElementById('dashboard').style.display = 'block';
+            document.getElementById('displayName').textContent = localStorage.getItem('username');
+            loadStats();
+        }
+    </script>
+</body>
+</html>

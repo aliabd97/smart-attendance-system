@@ -43,6 +43,8 @@ def init_barcode_mapping_db():
         CREATE TABLE IF NOT EXISTS barcode_mapping (
             lecture_id TEXT PRIMARY KEY,
             barcode_hash TEXT NOT NULL,
+            course_id TEXT,
+            date TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')

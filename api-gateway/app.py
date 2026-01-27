@@ -64,8 +64,8 @@ def validate_token():
 
 @app.route('/')
 def dashboard():
-    """Serve the professional admin dashboard"""
-    return send_from_directory('static', 'dashboard-professional.html')
+    """Serve the admin dashboard"""
+    return send_from_directory('static', 'dashboard.html')
 
 
 @app.route('/simple')
@@ -141,21 +141,15 @@ def auth_route(path):
 
 # Protected routes - require authentication
 
-# Route for /api/<service> (no path)
-@app.route('/api/<service>', methods=['GET', 'POST', 'PUT', 'DELETE'])
-def gateway_route_no_path(service):
-    """Gateway route for service root endpoints"""
-    return gateway_route(service, '')
-
-
+# Route for /api/<service>/<path>
 @app.route('/api/<service>/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE'])
-def gateway_route(service, path=''):
+def gateway_route(service, path):
     """
     Main gateway - validates token then forwards request to appropriate service
 
     Args:
         service: Service name (students, courses, etc.)
-        path: API path within the service (optional)
+        path: API path within the service
     """
     # Validate token
     user, error, status = validate_token()
@@ -169,13 +163,8 @@ def gateway_route(service, path=''):
             'available_services': list(SERVICES.keys())
         }), 404
 
-    # Build target URL
-    # If path is empty, forward to /api/<service>
-    # If path exists, forward to /api/<service>/<path>
-    if path:
-        url = f"{SERVICES[service]}/api/{service}/{path}"
-    else:
-        url = f"{SERVICES[service]}/api/{service}"
+    # Build target URL - forward to service's /api/<path>
+    url = f"{SERVICES[service]}/api/{path}"
 
     # Add user info to headers (so services know who is making the request)
     headers = {

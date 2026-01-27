@@ -99,6 +99,17 @@ def fetch_lectures_by_course(course_id):
 
 # API Endpoints
 
+@app.route('/')
+def index():
+    """Root endpoint"""
+    return jsonify({
+        'service': 'Reporting Service',
+        'status': 'healthy',
+        'port': 5009,
+        'version': '1.0.0'
+    }), 200
+
+
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""

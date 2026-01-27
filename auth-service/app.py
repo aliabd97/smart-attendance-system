@@ -174,6 +174,10 @@ def login():
             'exp': expiration
         }, SECRET_KEY, algorithm='HS256')
 
+        # Decode token if it's bytes (for older PyJWT versions)
+        if isinstance(token, bytes):
+            token = token.decode('utf-8')
+
         return jsonify({
             'token': token,
             'username': user['username'],

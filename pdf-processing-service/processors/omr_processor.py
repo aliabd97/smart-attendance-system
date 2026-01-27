@@ -47,11 +47,66 @@ class OMRProcessor:
         if output_folder is None:
             output_folder = tempfile.mkdtemp()
 
-        # Poppler path (Windows)
-        poppler_path = r'C:\Users\HP\smart-attendance-system\poppler-24.08.0\Library\bin'
+        # Try PyMuPDF first (faster and no external dependencies)
+        try:
+            import fitz  # PyMuPDF
 
-        # Convert PDF to images
-        images = convert_from_path(pdf_path, dpi=300, poppler_path=poppler_path)
+            # Open PDF
+            pdf_document = fitz.open(pdf_path)
+
+            # Convert each page to image
+            image_paths = []
+            for page_num in range(len(pdf_document)):
+                page = pdf_document[page_num]
+
+                # Render page to image (300 DPI)
+                mat = fitz.Matrix(300/72, 300/72)  # 300 DPI scaling
+                pix = page.get_pixmap(matrix=mat)
+
+                # Save as PNG
+                image_path = os.path.join(output_folder, f'page_{page_num + 1}.png')
+                pix.save(image_path)
+                image_paths.append(image_path)
+
+            pdf_document.close()
+            return image_paths
+
+        except ImportError:
+            # PyMuPDF not available, try pdf2image with poppler
+            pass
+        except Exception as e:
+            print(f"PyMuPDF failed: {e}, trying pdf2image...")
+
+        # Fallback to pdf2image (requires poppler)
+        try:
+            images = convert_from_path(pdf_path, dpi=300)
+        except Exception as e:
+            # If that fails, try common Windows poppler locations
+            poppler_paths = [
+                r'C:\Program Files\poppler\Library\bin',
+                r'C:\Program Files (x86)\poppler\Library\bin',
+                r'C:\poppler\Library\bin',
+                os.path.join(os.path.expanduser('~'), 'poppler', 'Library', 'bin')
+            ]
+
+            images = None
+            for poppler_path in poppler_paths:
+                if os.path.exists(poppler_path):
+                    try:
+                        images = convert_from_path(pdf_path, dpi=300, poppler_path=poppler_path)
+                        break
+                    except:
+                        continue
+
+            if images is None:
+                raise Exception(
+                    "Unable to convert PDF to images. Please install PyMuPDF:\n"
+                    "pip install --user PyMuPDF\n\n"
+                    "Or install poppler:\n"
+                    "1. Download from: https://github.com/oschwartz10612/poppler-windows/releases/\n"
+                    "2. Extract to C:\\poppler\n"
+                    "3. Add C:\\poppler\\Library\\bin to your system PATH"
+                )
 
         image_paths = []
         for i, image in enumerate(images, 1):

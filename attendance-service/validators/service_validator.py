@@ -3,6 +3,7 @@ Service Validator - Breaking Foreign Keys Pattern
 Validates student and course IDs by calling their respective services
 """
 
+from __future__ import annotations
 import requests
 import os
 import sys
