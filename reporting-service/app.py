@@ -19,6 +19,9 @@ from bulkhead import ServiceBulkheads
 from generators.excel_generator import ExcelReportGenerator
 from generators.pdf_generator import PDFReportGenerator
 
+# استيراد Strategy Factory للـ Reflection
+from strategy_factory import StrategyFactory
+
 app = Flask(__name__)
 CORS(app)
 
@@ -27,9 +30,15 @@ STUDENT_SERVICE_URL = os.getenv('STUDENT_SERVICE_URL', 'http://localhost:5001')
 COURSE_SERVICE_URL = os.getenv('COURSE_SERVICE_URL', 'http://localhost:5002')
 ATTENDANCE_SERVICE_URL = os.getenv('ATTENDANCE_SERVICE_URL', 'http://localhost:5006')
 
-# Initialize generators
+# Initialize generators (للتوافق مع الكود القديم)
 excel_generator = ExcelReportGenerator()
 pdf_generator = PDFReportGenerator()
+
+# إنشاء Strategy Factory (Reflection Pattern)
+strategy_factory = StrategyFactory()
+print(f"[Reporting Service] Strategy Factory initialized")
+print(f"[Reporting Service] Default format: {strategy_factory.get_default_format()}")
+print(f"[Reporting Service] Available formats: {strategy_factory.get_available_formats()}")
 
 # Circuit breakers for external services
 student_service_breaker = CircuitBreaker(failure_threshold=3, timeout=30)
@@ -62,11 +71,28 @@ def fetch_course_data(course_id):
 def fetch_students_by_course(course_id):
     """Fetch all students in a course"""
     try:
+        # Get student IDs from course service
         response = requests.get(f'{COURSE_SERVICE_URL}/api/courses/{course_id}/students', timeout=5)
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+
+        # Extract student IDs
+        student_ids = data.get('student_ids', [])
+
+        # Fetch full student data for each ID
+        students = []
+        for student_id in student_ids:
+            try:
+                student_response = requests.get(f'{STUDENT_SERVICE_URL}/api/students/{student_id}', timeout=5)
+                if student_response.status_code == 200:
+                    students.append(student_response.json())
+            except:
+                # Skip students that can't be fetched
+                continue
+
+        return students
     except Exception as e:
-        return {'error': str(e)}
+        return []
 
 
 def fetch_attendance_records(student_id=None, course_id=None, lecture_id=None):
@@ -82,22 +108,58 @@ def fetch_attendance_records(student_id=None, course_id=None, lecture_id=None):
 
         response = requests.get(f'{ATTENDANCE_SERVICE_URL}/api/attendance', params=params, timeout=5)
         response.raise_for_status()
-        return response.json()
+        data = response.json()
+
+        # Extract records array from response
+        if isinstance(data, dict) and 'records' in data:
+            return data['records']
+        elif isinstance(data, list):
+            return data
+        else:
+            return []
     except Exception as e:
         return []
 
 
 def fetch_lectures_by_course(course_id):
-    """Fetch all lectures for a course"""
+    """
+    Extract unique lectures from attendance records
+    (Lectures endpoint doesn't exist, so we derive it from attendance data)
+    """
     try:
-        response = requests.get(f'{ATTENDANCE_SERVICE_URL}/api/lectures/course/{course_id}', timeout=5)
-        response.raise_for_status()
-        return response.json()
+        # Get attendance records for this course
+        records = fetch_attendance_records(course_id=course_id)
+
+        # Extract unique lecture dates/IDs
+        lectures_map = {}
+        for record in records:
+            date = record.get('date', 'Unknown')
+            lecture_id = record.get('id', date)  # Use attendance record ID as lecture ID
+
+            if date not in lectures_map:
+                lectures_map[date] = {
+                    'lecture_id': f"LEC_{date}",
+                    'date': date,
+                    'course_id': course_id
+                }
+
+        return list(lectures_map.values())
     except Exception as e:
         return []
 
 
 # API Endpoints
+
+@app.route('/')
+def index():
+    """Root endpoint"""
+    return jsonify({
+        'service': 'Reporting Service',
+        'status': 'healthy',
+        'port': 5009,
+        'version': '1.0.0'
+    }), 200
+
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -112,22 +174,33 @@ def health_check():
 @app.route('/api/reports/student/<student_id>', methods=['GET'])
 def generate_student_report(student_id):
     """
-    Generate attendance report for a single student
+    توليد تقرير حضور لطالب واحد (مع Strategy Pattern + Reflection)
 
-    Query parameters:
-    - course_id (required): Course ID
-    - format (optional): 'excel' or 'pdf' (default: excel)
+    معاملات الاستعلام:
+    - course_id (مطلوب): معرّف المقرر
+    - format (اختياري): 'excel', 'pdf', أو 'csv' (الافتراضي من config.yml)
+
+    الميزة الأكاديمية:
+    - يستخدم Strategy Pattern: اختيار الصيغة ديناميكياً
+    - يستخدم Reflection: تحميل الاستراتيجية من اسم نصي
+    - Open/Closed Principle: إضافة صيغة جديدة بدون تعديل هذا الكود
     """
     try:
         course_id = request.args.get('course_id')
         if not course_id:
             return jsonify({'error': 'course_id is required'}), 400
 
-        report_format = request.args.get('format', 'excel').lower()
-        if report_format not in ['excel', 'pdf']:
-            return jsonify({'error': 'format must be excel or pdf'}), 400
+        # الحصول على الصيغة المطلوبة (أو استخدام الافتراضية من config.yml)
+        report_format = request.args.get('format', strategy_factory.get_default_format()).lower()
 
-        # Fetch data from services
+        # التحقق من توفر الصيغة
+        if not strategy_factory.is_format_available(report_format):
+            return jsonify({
+                'error': f"Format '{report_format}' is not available",
+                'available_formats': strategy_factory.get_available_formats()
+            }), 400
+
+        # جلب البيانات من الخدمات الأخرى
         student_data = fetch_student_data(student_id)
         if 'error' in student_data:
             return jsonify({'error': f"Student not found: {student_data['error']}"}), 404
@@ -138,37 +211,63 @@ def generate_student_report(student_id):
 
         attendance_records = fetch_attendance_records(student_id=student_id, course_id=course_id)
 
-        # Generate report
-        if report_format == 'excel':
-            filepath = excel_generator.generate_student_report(student_data, attendance_records, course_data)
-        else:
-            filepath = pdf_generator.generate_student_report(student_data, attendance_records, course_data)
+        # ========================================
+        # Strategy Pattern + Reflection هنا!
+        # ========================================
+        # بدلاً من if-else:
+        #   if format == 'excel': use excel_generator
+        #   elif format == 'pdf': use pdf_generator
+        #   elif format == 'csv': use csv_generator
+        #
+        # نستخدم Reflection لتحميل الاستراتيجية ديناميكياً:
+        strategy = strategy_factory.create_strategy(report_format)
 
-        # Return file
+        # استخدام الاستراتيجية (واجهة موحدة لجميع الصيغ)
+        filepath = strategy.generate_student_report(
+            student_data,
+            attendance_records,
+            course_data
+        )
+        # ========================================
+
+        print(f"[Reporting Service] تم توليد تقرير طالب بصيغة {report_format}: {filepath}")
+
+        # إرجاع الملف
         return send_file(
             filepath,
             as_attachment=True,
             download_name=os.path.basename(filepath)
         )
 
+    except ValueError as e:
+        # الصيغة غير متاحة
+        return jsonify({'error': str(e)}), 400
+
     except Exception as e:
+        # خطأ عام
         return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/reports/course/<course_id>', methods=['GET'])
 def generate_course_report(course_id):
     """
-    Generate attendance report for entire course
+    توليد تقرير حضور لمقرر كامل (مع Strategy Pattern + Reflection)
 
-    Query parameters:
-    - format (optional): 'excel' or 'pdf' (default: excel)
+    معاملات الاستعلام:
+    - format (اختياري): 'excel', 'pdf', أو 'csv' (الافتراضي من config.yml)
     """
     try:
-        report_format = request.args.get('format', 'excel').lower()
-        if report_format not in ['excel', 'pdf']:
-            return jsonify({'error': 'format must be excel or pdf'}), 400
+        # الحصول على الصيغة المطلوبة (أو استخدام الافتراضية)
+        report_format = request.args.get('format', strategy_factory.get_default_format()).lower()
 
-        # Fetch data from services
+        # التحقق من توفر الصيغة
+        if not strategy_factory.is_format_available(report_format):
+            return jsonify({
+                'error': f"Format '{report_format}' is not available",
+                'available_formats': strategy_factory.get_available_formats()
+            }), 400
+
+        # جلب البيانات من الخدمات الأخرى
         course_data = fetch_course_data(course_id)
         if 'error' in course_data:
             return jsonify({'error': f"Course not found: {course_data['error']}"}), 404
@@ -177,28 +276,42 @@ def generate_course_report(course_id):
         lectures_data = fetch_lectures_by_course(course_id)
         attendance_records = fetch_attendance_records(course_id=course_id)
 
-        # Build attendance matrix
+        # بناء مصفوفة الحضور
         attendance_matrix = {}
         for record in attendance_records:
-            key = (record['student_id'], record['lecture_id'])
-            attendance_matrix[key] = record['status']
+            student_id = record.get('student_id')
+            date = record.get('date', 'Unknown')
+            lecture_id = f"LEC_{date}"  # Match the lecture_id format from fetch_lectures_by_course
+            status = record.get('status', 'unknown')
 
-        # Generate report
-        if report_format == 'excel':
-            filepath = excel_generator.generate_course_report(
-                course_data, lectures_data, students_data, attendance_matrix
-            )
-        else:
-            filepath = pdf_generator.generate_course_report(
-                course_data, lectures_data, students_data, attendance_matrix
-            )
+            if student_id:
+                key = (student_id, lecture_id)
+                attendance_matrix[key] = status
 
-        # Return file
+        # ========================================
+        # Strategy Pattern + Reflection هنا!
+        # ========================================
+        strategy = strategy_factory.create_strategy(report_format)
+
+        filepath = strategy.generate_course_report(
+            course_data,
+            lectures_data,
+            students_data,
+            attendance_matrix
+        )
+        # ========================================
+
+        print(f"[Reporting Service] تم توليد تقرير مقرر بصيغة {report_format}: {filepath}")
+
+        # إرجاع الملف
         return send_file(
             filepath,
             as_attachment=True,
             download_name=os.path.basename(filepath)
         )
+
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -301,17 +414,19 @@ def generate_absence_alerts():
             attendance_records = fetch_attendance_records(course_id=course_id)
 
             for student in students:
-                student_id = student['student_id']
+                student_id = student.get('id') or student.get('student_id')
+                student_name = student.get('name', 'Unknown')
+
                 present_count = sum(1 for r in attendance_records
-                                  if r['student_id'] == student_id and r['status'] == 'present')
+                                  if r.get('student_id') == student_id and r.get('status') == 'present')
                 absent_count = len(lectures) - present_count
                 percentage = (present_count / len(lectures) * 100) if len(lectures) > 0 else 0
 
                 if percentage < threshold:
                     at_risk_students.append({
                         'student_id': student_id,
-                        'name': student['name'],
-                        'course_name': course_data['name'],
+                        'name': student_name,
+                        'course_name': course_data.get('name', 'Unknown'),
                         'present_count': present_count,
                         'absent_count': absent_count,
                         'attendance_percentage': percentage
@@ -371,9 +486,11 @@ def get_course_statistics(course_id):
         at_risk_count = 0
 
         for student in students:
-            student_id = student['student_id']
+            student_id = student.get('id') or student.get('student_id')  # Support both field names
+            student_name = student.get('name', 'Unknown')
+
             student_present = sum(1 for r in attendance_records
-                                if r['student_id'] == student_id and r['status'] == 'present')
+                                if r.get('student_id') == student_id and r.get('status') == 'present')
             student_absent = total_lectures - student_present
             student_percentage = (student_present / total_lectures * 100) if total_lectures > 0 else 0
 
@@ -382,7 +499,7 @@ def get_course_statistics(course_id):
 
             student_stats.append({
                 'student_id': student_id,
-                'name': student['name'],
+                'name': student_name,
                 'present': student_present,
                 'absent': student_absent,
                 'percentage': round(student_percentage, 2),

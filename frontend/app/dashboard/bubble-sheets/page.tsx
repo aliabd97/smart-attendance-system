@@ -56,14 +56,14 @@ export default function BubbleSheetsPage() {
       if (!token) throw new Error('Not authenticated')
 
       // Fetch course data
-      const courseResponse = await fetch(`/api/courses/${formData.courseId}`, {
+      const courseResponse = await fetch(`http://localhost:5000/api/courses/courses/${formData.courseId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       if (!courseResponse.ok) throw new Error('Course not found')
       const courseData = await courseResponse.json()
 
       // Fetch students enrolled in the course
-      const studentsResponse = await fetch(`/api/courses/${formData.courseId}/students`, {
+      const studentsResponse = await fetch(`http://localhost:5000/api/courses/courses/${formData.courseId}/students`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
       if (!studentsResponse.ok) throw new Error('Failed to fetch students')
@@ -78,7 +78,7 @@ export default function BubbleSheetsPage() {
 
       // Fetch full student data for each student
       const studentsPromises = studentIds.map((studentId: string) =>
-        fetch(`/api/students/${studentId}`, {
+        fetch(`http://localhost:5000/api/students/students/${studentId}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         }).then(res => res.json())
       )

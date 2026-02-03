@@ -90,6 +90,20 @@ def record_attendance():
         )
 
         if success:
+            # Choreography: Publish event to RabbitMQ after successful recording
+            # Course Service will consume this event independently
+            if rabbitmq:
+                try:
+                    rabbitmq.publish({
+                        'event': 'attendance_recorded',
+                        'student_id': student_id,
+                        'course_id': course_id,
+                        'date': date,
+                        'status': status
+                    })
+                except Exception as rmq_err:
+                    print(f"[RabbitMQ] Could not publish event: {rmq_err}")
+
             return jsonify({
                 'message': message,
                 'record_id': record_id,

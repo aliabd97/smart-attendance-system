@@ -1,124 +1,110 @@
 """
-RabbitMQ Client for message queue communication
-Used by all services for asynchronous operations
+RabbitMQ Client - Message Broker for Choreography Pattern
+
+This implements the Choreography pattern:
+- Services communicate through events (messages) via RabbitMQ
+- No central coordinator - each service reacts independently to events
+- Loose coupling between services
+
+Queue: attendance_events
+- Producer: Attendance Service (publishes after recording attendance)
+- Consumer: Course Service (reads events and updates attendance stats)
 """
 
 import pika
 import json
 import os
-from typing import Callable, Dict
-
-# Queue definitions
-QUEUES = {
-    'pdf_processing': {
-        'durable': True,
-        'auto_delete': False,
-        'arguments': {
-            'x-message-ttl': 3600000,  # 1 hour
-            'x-max-length': 1000
-        }
-    },
-    'attendance_recording': {
-        'durable': True,
-        'auto_delete': False
-    },
-    'report_generation': {
-        'durable': True,
-        'auto_delete': False
-    },
-    'notifications': {
-        'durable': True,
-        'auto_delete': False
-    }
-}
+from typing import Callable
 
 
 class RabbitMQClient:
-    """
-    RabbitMQ client for publishing and consuming messages
-    Handles connection management and queue setup
-    """
+    """Simple RabbitMQ client for publishing and consuming messages"""
+
+    QUEUE_NAME = 'attendance_events'
 
     def __init__(self, host: str = None):
-        """
-        Initialize RabbitMQ connection
-
-        Args:
-            host: RabbitMQ server host (defaults to RABBITMQ_HOST env var or localhost)
-        """
         self.host = host or os.getenv('RABBITMQ_HOST', 'localhost')
         self.connection = None
         self.channel = None
         self._connect()
 
     def _connect(self):
-        """Establish connection to RabbitMQ server"""
+        """Connect to RabbitMQ server"""
         try:
             self.connection = pika.BlockingConnection(
                 pika.ConnectionParameters(host=self.host)
             )
             self.channel = self.connection.channel()
-            self._setup_queues()
-            print(f"✅ Connected to RabbitMQ at {self.host}")
+
+            # Declare the queue
+            self.channel.queue_declare(queue=self.QUEUE_NAME, durable=True)
+
+            print(f"[RabbitMQ] Connected to {self.host}")
+            print(f"[RabbitMQ] Queue '{self.QUEUE_NAME}' ready")
         except Exception as e:
-            print(f"❌ Failed to connect to RabbitMQ: {e}")
+            print(f"[RabbitMQ] Failed to connect: {e}")
             raise
 
-    def _setup_queues(self):
-        """Declare all queues with their configurations"""
-        for queue_name, config in QUEUES.items():
-            self.channel.queue_declare(
-                queue=queue_name,
-                **config
-            )
-            print(f"✅ Queue '{queue_name}' declared")
-
-    def publish(self, queue_name: str, message: dict):
+    def publish(self, message: dict):
         """
-        Publish a message to a queue
+        Publish a message to the attendance_events queue.
 
         Args:
-            queue_name: Name of the queue
-            message: Dictionary to send (will be JSON encoded)
+            message: Dictionary with event data (will be JSON encoded)
         """
         try:
             self.channel.basic_publish(
                 exchange='',
-                routing_key=queue_name,
+                routing_key=self.QUEUE_NAME,
                 body=json.dumps(message),
                 properties=pika.BasicProperties(
                     delivery_mode=2,  # Make message persistent
                     content_type='application/json'
                 )
             )
-            print(f"📤 Published message to queue '{queue_name}'")
+            print(f"[RabbitMQ] Published event: student={message.get('student_id')}, course={message.get('course_id')}")
         except Exception as e:
-            print(f"❌ Failed to publish message: {e}")
-            raise
+            print(f"[RabbitMQ] Failed to publish: {e}")
+            # Try to reconnect
+            try:
+                self._connect()
+                self.channel.basic_publish(
+                    exchange='',
+                    routing_key=self.QUEUE_NAME,
+                    body=json.dumps(message),
+                    properties=pika.BasicProperties(delivery_mode=2)
+                )
+                print(f"[RabbitMQ] Published event after reconnect")
+            except:
+                print(f"[RabbitMQ] Publish failed even after reconnect")
 
-    def consume(self, queue_name: str, callback: Callable):
+    def consume(self, callback: Callable):
         """
-        Start consuming messages from a queue
+        Start consuming messages from the attendance_events queue.
+        This blocks - run in a separate thread.
 
         Args:
-            queue_name: Name of the queue to consume from
-            callback: Function to call for each message
+            callback: Function to call for each message.
+                      Signature: callback(channel, method, properties, body)
         """
         try:
             self.channel.basic_qos(prefetch_count=1)
             self.channel.basic_consume(
-                queue=queue_name,
+                queue=self.QUEUE_NAME,
                 on_message_callback=callback,
                 auto_ack=False
             )
-            print(f"📥 Started consuming from queue '{queue_name}'")
+            print(f"[RabbitMQ] Waiting for events on '{self.QUEUE_NAME}'...")
             self.channel.start_consuming()
         except Exception as e:
-            print(f"❌ Failed to consume messages: {e}")
-            raise
+            print(f"[RabbitMQ] Consumer error: {e}")
 
     def close(self):
-        """Close RabbitMQ connection"""
+        """Close connection"""
         if self.connection and not self.connection.is_closed:
             self.connection.close()
-            print("✅ RabbitMQ connection closed")
+            print("[RabbitMQ] Connection closed")
+
+    def is_connected(self):
+        """Check if connected to RabbitMQ"""
+        return self.connection is not None and not self.connection.is_closed

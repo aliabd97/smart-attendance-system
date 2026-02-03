@@ -23,11 +23,21 @@ class OMRProcessor:
     3. Fetch bubble templates from database
     4. Detect filled bubbles
     5. Generate attendance records
+    6. Send results to Attendance Service (protected by Circuit Breaker)
     """
 
     def __init__(self, bubble_service_url: str = "http://localhost:5003"):
         self.image_processor = ImageProcessor()
         self.bubble_service_url = bubble_service_url
+
+        # Circuit Breaker: protects calls from PDF Processing (Client) to Attendance Service (Server)
+        from common.circuit_breaker import CircuitBreaker
+        self.attendance_cb = CircuitBreaker(
+            name="attendance-service",
+            failure_threshold=3,
+            timeout=15,
+            success_threshold=2
+        )
 
     def convert_pdf_to_images(
         self,
@@ -47,11 +57,66 @@ class OMRProcessor:
         if output_folder is None:
             output_folder = tempfile.mkdtemp()
 
-        # Poppler path (Windows)
-        poppler_path = r'C:\Users\HP\smart-attendance-system\poppler-24.08.0\Library\bin'
+        # Try PyMuPDF first (faster and no external dependencies)
+        try:
+            import fitz  # PyMuPDF
 
-        # Convert PDF to images
-        images = convert_from_path(pdf_path, dpi=300, poppler_path=poppler_path)
+            # Open PDF
+            pdf_document = fitz.open(pdf_path)
+
+            # Convert each page to image
+            image_paths = []
+            for page_num in range(len(pdf_document)):
+                page = pdf_document[page_num]
+
+                # Render page to image (300 DPI)
+                mat = fitz.Matrix(300/72, 300/72)  # 300 DPI scaling
+                pix = page.get_pixmap(matrix=mat)
+
+                # Save as PNG
+                image_path = os.path.join(output_folder, f'page_{page_num + 1}.png')
+                pix.save(image_path)
+                image_paths.append(image_path)
+
+            pdf_document.close()
+            return image_paths
+
+        except ImportError:
+            # PyMuPDF not available, try pdf2image with poppler
+            pass
+        except Exception as e:
+            print(f"PyMuPDF failed: {e}, trying pdf2image...")
+
+        # Fallback to pdf2image (requires poppler)
+        try:
+            images = convert_from_path(pdf_path, dpi=300)
+        except Exception as e:
+            # If that fails, try common Windows poppler locations
+            poppler_paths = [
+                r'C:\Program Files\poppler\Library\bin',
+                r'C:\Program Files (x86)\poppler\Library\bin',
+                r'C:\poppler\Library\bin',
+                os.path.join(os.path.expanduser('~'), 'poppler', 'Library', 'bin')
+            ]
+
+            images = None
+            for poppler_path in poppler_paths:
+                if os.path.exists(poppler_path):
+                    try:
+                        images = convert_from_path(pdf_path, dpi=300, poppler_path=poppler_path)
+                        break
+                    except:
+                        continue
+
+            if images is None:
+                raise Exception(
+                    "Unable to convert PDF to images. Please install PyMuPDF:\n"
+                    "pip install --user PyMuPDF\n\n"
+                    "Or install poppler:\n"
+                    "1. Download from: https://github.com/oschwartz10612/poppler-windows/releases/\n"
+                    "2. Extract to C:\\poppler\n"
+                    "3. Add C:\\poppler\\Library\\bin to your system PATH"
+                )
 
         image_paths = []
         for i, image in enumerate(images, 1):
@@ -301,52 +366,58 @@ class OMRProcessor:
         attendance_service_url: str = "http://localhost:5005"
     ) -> Dict:
         """
-        Send attendance records to Attendance Service
+        Send attendance records to Attendance Service.
+        Protected by Circuit Breaker (Client-Side pattern).
 
-        Args:
-            attendance_records: List of attendance records
-            attendance_service_url: Attendance Service URL
-
-        Returns:
-            Result summary
+        If Attendance Service is down:
+        - First 3 failures: CB stays CLOSED, counts failures
+        - After 3 failures: CB opens, all subsequent requests rejected immediately
+        - After 15s timeout: CB goes HALF_OPEN, tests with one request
+        - If test succeeds: CB closes, normal operation resumes
         """
         import requests
 
         success_count = 0
         error_count = 0
+        cb_rejected_count = 0
         errors = []
 
         for record in attendance_records:
             try:
-                response = requests.post(
-                    f"{attendance_service_url}/api/attendance",
-                    json=record,
-                    headers={'Content-Type': 'application/json'},
-                    timeout=10
-                )
+                # Use Circuit Breaker to protect the HTTP call
+                def send_single_record():
+                    response = requests.post(
+                        f"{attendance_service_url}/api/attendance",
+                        json=record,
+                        headers={'Content-Type': 'application/json'},
+                        timeout=10
+                    )
+                    if response.status_code not in [200, 201]:
+                        raise Exception(f"HTTP {response.status_code}: {response.text}")
+                    return response
 
-                if response.status_code in [200, 201]:
-                    success_count += 1
+                response = self.attendance_cb.call(send_single_record)
+                success_count += 1
+
+            except Exception as e:
+                error_msg = str(e)
+                if "circuit is OPEN" in error_msg:
+                    cb_rejected_count += 1
                 else:
                     error_count += 1
-                    errors.append({
-                        'student_id': record['student_id'],
-                        'error': response.text
-                    })
-
-            except requests.RequestException as e:
-                error_count += 1
                 errors.append({
                     'student_id': record['student_id'],
-                    'error': str(e)
+                    'error': error_msg
                 })
 
         return {
             'total_records': len(attendance_records),
             'success': success_count,
             'errors': error_count,
+            'cb_rejected': cb_rejected_count,
+            'circuit_breaker_state': self.attendance_cb.get_state(),
             'error_details': errors if errors else None,
-            'status': 'success' if error_count == 0 else 'partial_success'
+            'status': 'success' if error_count == 0 and cb_rejected_count == 0 else 'partial_success'
         }
 
 

@@ -2,6 +2,7 @@
 Attendance model and data operations
 """
 
+from __future__ import annotations
 from typing import List, Optional, Dict
 from datetime import datetime
 import hashlib

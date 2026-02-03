@@ -5,13 +5,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
-import { FileSpreadsheet, FileText, Download } from 'lucide-react'
+import { FileSpreadsheet, FileText, Download, Table } from 'lucide-react'
 
 export default function ReportsPage() {
   const [excelForm, setExcelForm] = useState({ courseId: '', startDate: '', endDate: '' })
   const [pdfForm, setPdfForm] = useState({ courseId: '', startDate: '', endDate: '' })
+  const [csvForm, setCsvForm] = useState({ courseId: '', startDate: '', endDate: '' })
   const [excelLoading, setExcelLoading] = useState(false)
   const [pdfLoading, setPdfLoading] = useState(false)
+  const [csvLoading, setCsvLoading] = useState(false)
 
   const handleExcelReport = async () => {
     if (!excelForm.courseId) {
@@ -53,6 +55,26 @@ export default function ReportsPage() {
     }
   }
 
+  const handleCsvReport = async () => {
+    if (!csvForm.courseId) {
+      alert('Please enter Course ID')
+      return
+    }
+
+    setCsvLoading(true)
+    try {
+      // Strategy Pattern + Reflection: CSV format!
+      const url = `http://localhost:5009/api/reports/course/${csvForm.courseId}?format=csv`
+      window.open(url, '_blank')
+
+      alert('CSV report is being generated and downloaded!')
+    } catch (error: any) {
+      alert('Error: ' + error.message)
+    } finally {
+      setCsvLoading(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -62,7 +84,7 @@ export default function ReportsPage() {
         </p>
       </div>
 
-      <div className="grid md:grid-cols-2 gap-6">
+      <div className="grid md:grid-cols-3 gap-6">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -115,6 +137,35 @@ export default function ReportsPage() {
             >
               <Download className="w-4 h-4 mr-2" />
               {pdfLoading ? 'Generating...' : 'Generate PDF Report'}
+            </Button>
+          </CardContent>
+        </Card>
+
+        <Card className="border-2 border-primary/20 bg-primary/5">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Table className="w-5 h-5 text-blue-600" />
+              CSV Report
+              <span className="text-xs bg-blue-100 text-blue-600 px-2 py-1 rounded">New!</span>
+            </CardTitle>
+            <CardDescription>Export as CSV (Strategy Pattern Demo)</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <Label>Course ID</Label>
+              <Input
+                placeholder="e.g., CS101"
+                value={csvForm.courseId}
+                onChange={(e) => setCsvForm({ ...csvForm, courseId: e.target.value })}
+              />
+            </div>
+            <Button
+              className="w-full"
+              onClick={handleCsvReport}
+              disabled={csvLoading}
+            >
+              <Download className="w-4 h-4 mr-2" />
+              {csvLoading ? 'Generating...' : 'Generate CSV Report'}
             </Button>
           </CardContent>
         </Card>

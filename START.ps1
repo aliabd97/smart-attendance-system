@@ -11,20 +11,56 @@ $currentDir = Get-Location
 
 # Services list (order matters!)
 $services = @(
-    @{Name="Service Registry"; Path="service-registry"; Port=5008; Wait=2},
-    @{Name="Auth Service"; Path="auth-service"; Port=5007; Wait=2},
-    @{Name="Student Service"; Path="student-service"; Port=5001; Wait=2},
-    @{Name="Course Service"; Path="course-service"; Port=5002; Wait=2},
-    @{Name="Attendance Service"; Path="attendance-service"; Port=5005; Wait=2},
-    @{Name="Bubble Sheet Generator"; Path="bubble-sheet-generator"; Port=5003; Wait=2},
-    @{Name="PDF Processing Service"; Path="pdf-processing-service"; Port=5004; Wait=2},
-    @{Name="Reporting Service"; Path="reporting-service"; Port=5009; Wait=2},
-    @{Name="API Gateway"; Path="api-gateway"; Port=5000; Wait=3}
+    @{Name="Auth Service"; Path="auth-service"; Port=5007; Wait=2; Type="Python"},
+    @{Name="Student Service"; Path="student-service"; Port=5001; Wait=2; Type="Python"},
+    @{Name="Course Service"; Path="course-service"; Port=5002; Wait=2; Type="Python"},
+    @{Name="Attendance Service"; Path="attendance-service"; Port=5005; Wait=2; Type="Python"},
+    @{Name="Bubble Sheet Generator"; Path="bubble-sheet-generator"; Port=5003; Wait=2; Type="Python"},
+    @{Name="PDF Processing Service"; Path="pdf-processing-service"; Port=5004; Wait=2; Type="Python"},
+    @{Name="Reporting Service"; Path="reporting-service"; Port=5009; Wait=2; Type="Python"},
+    @{Name="API Gateway"; Path="api-gateway"; Port=5000; Wait=3; Type="Python"},
+    @{Name="Frontend Dashboard"; Path="frontend"; Port=3000; Wait=5; Type="NextJS"}
 )
 
+# =========================================
+# Clean up ports before starting
+# =========================================
+Write-Host "Checking for running services on ports..." -ForegroundColor Yellow
+
+$portsToClean = $services | ForEach-Object { $_.Port }
+$cleanedCount = 0
+
+foreach ($port in $portsToClean) {
+    try {
+        # Find processes using this port
+        $processInfo = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue |
+                       Select-Object -First 1 -ExpandProperty OwningProcess
+
+        if ($processInfo) {
+            $process = Get-Process -Id $processInfo -ErrorAction SilentlyContinue
+            if ($process) {
+                Write-Host "  → Stopping process on port $port (PID: $processInfo)..." -ForegroundColor DarkYellow
+                Stop-Process -Id $processInfo -Force -ErrorAction SilentlyContinue
+                $cleanedCount++
+                Start-Sleep -Milliseconds 500
+            }
+        }
+    } catch {
+        # Port is free, continue
+    }
+}
+
+if ($cleanedCount -gt 0) {
+    Write-Host "  ✓ Cleaned $cleanedCount port(s)" -ForegroundColor Green
+    Start-Sleep -Seconds 1
+} else {
+    Write-Host "  ✓ All ports are free" -ForegroundColor Green
+}
+
+Write-Host ""
 Write-Host "Starting:" -ForegroundColor Yellow
-Write-Host "  - 9 Backend Microservices" -ForegroundColor White
-Write-Host "  - Dashboard integrated with API Gateway" -ForegroundColor White
+Write-Host "  - 8 Backend Microservices" -ForegroundColor White
+Write-Host "  - Next.js Frontend Dashboard" -ForegroundColor White
 Write-Host ""
 
 $totalServices = $services.Count
@@ -36,14 +72,20 @@ foreach ($service in $services) {
 
     Write-Host "[$currentService/$totalServices] Starting $($service.Name)..." -ForegroundColor Green
 
-    if (Test-Path "$servicePath\app.py") {
+    if ($service.Type -eq "Python" -and (Test-Path "$servicePath\app.py")) {
         $title = "Smart Attendance - $($service.Name)"
         Start-Process powershell -ArgumentList "-NoExit", "-Command", "& {`$Host.UI.RawUI.WindowTitle='$title'; cd '$servicePath'; python app.py}"
 
         Write-Host "   OK - Port $($service.Port)" -ForegroundColor Cyan
         Start-Sleep -Seconds $service.Wait
+    } elseif ($service.Type -eq "NextJS" -and (Test-Path "$servicePath\package.json")) {
+        $title = "Smart Attendance - Frontend"
+        Start-Process powershell -ArgumentList "-NoExit", "-Command", "& {`$Host.UI.RawUI.WindowTitle='$title'; cd '$servicePath'; npm run dev}"
+
+        Write-Host "   OK - Port $($service.Port)" -ForegroundColor Cyan
+        Start-Sleep -Seconds $service.Wait
     } else {
-        Write-Host "   ERROR - app.py not found in $servicePath" -ForegroundColor Red
+        Write-Host "   ERROR - Service files not found in $servicePath" -ForegroundColor Red
     }
 }
 
@@ -61,7 +103,6 @@ Write-Host "Services running:" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Backend Services:" -ForegroundColor Yellow
 Write-Host "  -----------------" -ForegroundColor DarkGray
-Write-Host "  Service Registry:       http://localhost:5008" -ForegroundColor White
 Write-Host "  Auth Service:           http://localhost:5007" -ForegroundColor White
 Write-Host "  Student Service:        http://localhost:5001" -ForegroundColor White
 Write-Host "  Course Service:         http://localhost:5002" -ForegroundColor White
@@ -72,7 +113,7 @@ Write-Host "  Reporting Service:      http://localhost:5009" -ForegroundColor Wh
 Write-Host "  API Gateway:            http://localhost:5000" -ForegroundColor White
 Write-Host ""
 Write-Host "  ================================================" -ForegroundColor Magenta
-Write-Host "  ADMIN DASHBOARD:  http://localhost:5000        " -ForegroundColor Magenta
+Write-Host "  ADMIN DASHBOARD:  http://localhost:3000        " -ForegroundColor Magenta
 Write-Host "  ================================================" -ForegroundColor Magenta
 Write-Host ""
 
@@ -83,7 +124,7 @@ Write-Host ""
 
 Write-Host "Next steps:" -ForegroundColor Yellow
 Write-Host "  1. Open browser" -ForegroundColor White
-Write-Host "  2. Go to: http://localhost:5000" -ForegroundColor White
+Write-Host "  2. Go to: http://localhost:3000" -ForegroundColor White
 Write-Host "  3. Login with credentials above" -ForegroundColor White
 Write-Host "  4. Start using the system!" -ForegroundColor White
 Write-Host ""
@@ -95,7 +136,7 @@ Write-Host ""
 Write-Host "Opening browser in 3 seconds..." -ForegroundColor Yellow
 Start-Sleep -Seconds 3
 
-Start-Process "http://localhost:5000"
+Start-Process "http://localhost:3000"
 
 Write-Host ""
 Write-Host "System is ready!" -ForegroundColor Green

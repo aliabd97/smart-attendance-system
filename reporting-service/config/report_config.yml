@@ -1,0 +1,98 @@
+# =========================================
+# ملف إعدادات استراتيجيات التقارير
+# Report Generation Strategies Configuration
+# =========================================
+#
+# الغرض الأكاديمي:
+# - يُظهر Strategy Pattern + Reflection
+# - تغيير الصيغة بدون تعديل الكود
+# - Open/Closed Principle من SOLID
+#
+# الاستخدام:
+# غيّر قيمة default_format لتغيير الصيغة الافتراضية ديناميكياً
+#
+
+# ===================
+# الصيغة الافتراضية
+# ===================
+# الخيارات: excel, pdf, csv
+# سيتم تحميل الاستراتيجية المناسبة ديناميكياً عبر Reflection
+default_format: "excel"
+
+# =======================
+# الصيغ المتاحة (Available Formats)
+# =======================
+available_formats:
+  - excel
+  - pdf
+  - csv
+  # يمكن إضافة صيغ جديدة هنا (مثلاً: json, html)
+  # فقط أضف اسم الصيغة + أنشئ ملف استراتيجية جديد
+
+# =======================
+# إعدادات كل صيغة
+# =======================
+
+formats:
+  excel:
+    enabled: true
+    output_dir: "reports/excel"
+    description: "تقارير Excel - مناسبة للتحليل والرسوم البيانية"
+
+  pdf:
+    enabled: true
+    output_dir: "reports/pdf"
+    page_size: "A4"
+    orientation: "landscape"
+    description: "تقارير PDF - مناسبة للطباعة والأرشفة"
+
+  csv:
+    enabled: true
+    output_dir: "reports/csv"
+    delimiter: ","
+    include_headers: true
+    description: "تقارير CSV - مناسبة للتحليل البرمجي (Python, R, Excel)"
+
+# =======================
+# شرح Reflection
+# =======================
+#
+# كيف يعمل Reflection في هذا المشروع:
+#
+# 1. قراءة قيمة default_format من هذا الملف
+#    مثلاً: default_format = "csv"
+#
+# 2. تحويل الاسم إلى اسم Class ديناميكياً:
+#    "csv" -> "CSVReportStrategy"
+#    الصيغة: {format.capitalize()}ReportStrategy
+#
+# 3. استخدام importlib + getattr لتحميل الفئة:
+#    module = importlib.import_module('strategies')
+#    StrategyClass = getattr(module, 'CSVReportStrategy')
+#
+# 4. إنشاء instance من الاستراتيجية:
+#    strategy = StrategyClass()
+#
+# 5. استخدام الاستراتيجية:
+#    filepath = strategy.generate_student_report(...)
+#
+# الفائدة:
+# - تغيير الصيغة = تعديل هذا الملف فقط (بدون تعديل كود Python)
+# - إضافة صيغة جديدة = ملف استراتيجية جديد فقط (بدون تعديل endpoints)
+# - Open/Closed Principle: مفتوح للتوسع، مغلق للتعديل
+#
+
+# =======================
+# Open/Closed Principle
+# =======================
+#
+# مثال على التوسع بدون تعديل:
+#
+# لإضافة صيغة JSON جديدة:
+# 1. أضف "json" إلى available_formats
+# 2. أنشئ strategies/json_strategy.py
+# 3. نفّذ JSONReportStrategy(ReportFormatStrategy)
+# 4. كل شيء سيعمل تلقائياً (بدون تعديل app.py)
+#
+# هذا هو Open/Closed Principle عملياً!
+#

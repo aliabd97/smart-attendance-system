@@ -328,6 +328,137 @@ def get_statistics():
         }), 500
 
 
+# ====================================================================
+# Circuit Breaker Demo Endpoints
+# These endpoints let you test and observe the Circuit Breaker in action
+# ====================================================================
+
+@app.route('/api/pdf/cb-status', methods=['GET'])
+def get_cb_status():
+    """
+    Get current Circuit Breaker state.
+    Shows: state (CLOSED/OPEN/HALF_OPEN), failure count, time until retry
+    """
+    return jsonify({
+        'circuit_breaker': omr_processor.attendance_cb.get_state(),
+        'description': {
+            'closed': 'Normal - requests pass through to Attendance Service',
+            'open': 'Failing - requests are rejected immediately (no HTTP call made)',
+            'half_open': 'Testing - one request allowed through to test if service recovered'
+        }
+    }), 200
+
+
+@app.route('/api/pdf/test-cb', methods=['POST'])
+def test_circuit_breaker():
+    """
+    Test Circuit Breaker by sending a test record to Attendance Service.
+    Use this to demonstrate CB state transitions:
+    1. Service up: CB stays CLOSED
+    2. Stop Attendance Service, send 3 requests: CB opens
+    3. Requests rejected immediately while CB is OPEN
+    4. Start Attendance Service, wait 15s: CB goes HALF_OPEN then CLOSED
+    """
+    import requests as http_requests
+
+    attendance_url = os.getenv('ATTENDANCE_SERVICE_URL', 'http://localhost:5005')
+
+    test_record = {
+        'student_id': 'TEST-001',
+        'course_id': 'TEST-COURSE',
+        'date': '2024-01-01',
+        'status': 'present'
+    }
+
+    try:
+        def call_attendance():
+            response = http_requests.post(
+                f"{attendance_url}/api/attendance",
+                json=test_record,
+                headers={'Content-Type': 'application/json'},
+                timeout=5
+            )
+            if response.status_code not in [200, 201]:
+                raise Exception(f"HTTP {response.status_code}")
+            return response
+
+        result = omr_processor.attendance_cb.call(call_attendance)
+
+        return jsonify({
+            'result': 'SUCCESS - Attendance Service responded',
+            'circuit_breaker': omr_processor.attendance_cb.get_state()
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            'result': f'FAILED - {str(e)}',
+            'circuit_breaker': omr_processor.attendance_cb.get_state()
+        }), 503
+
+
+@app.route('/api/pdf/test-library-cb', methods=['POST'])
+def test_library_circuit_breaker():
+    """
+    Test Circuit Breaker using pybreaker LIBRARY (for comparison).
+    Same behavior as manual CB, but using a proven library.
+    """
+    import requests as http_requests
+    from common.circuit_breaker_library import LibraryCircuitBreaker
+
+    if not hasattr(app, '_library_cb'):
+        app._library_cb = LibraryCircuitBreaker(
+            name="attendance-service-lib",
+            failure_threshold=3,
+            timeout=15
+        )
+
+    attendance_url = os.getenv('ATTENDANCE_SERVICE_URL', 'http://localhost:5005')
+
+    test_record = {
+        'student_id': 'TEST-LIB-001',
+        'course_id': 'TEST-COURSE',
+        'date': '2024-01-01',
+        'status': 'present'
+    }
+
+    try:
+        def call_attendance():
+            response = http_requests.post(
+                f"{attendance_url}/api/attendance",
+                json=test_record,
+                headers={'Content-Type': 'application/json'},
+                timeout=5
+            )
+            if response.status_code not in [200, 201]:
+                raise Exception(f"HTTP {response.status_code}")
+            return response
+
+        result = app._library_cb.call(call_attendance)
+
+        return jsonify({
+            'result': 'SUCCESS - Attendance Service responded (Library CB)',
+            'circuit_breaker': app._library_cb.get_state(),
+            'comparison': 'Using pybreaker library - same concept, less code'
+        }), 200
+
+    except Exception as e:
+        return jsonify({
+            'result': f'FAILED - {str(e)}',
+            'circuit_breaker': app._library_cb.get_state(),
+            'comparison': 'Using pybreaker library - same concept, less code'
+        }), 503
+
+
+@app.route('/api/pdf/cb-reset', methods=['POST'])
+def reset_circuit_breaker():
+    """Manually reset the Circuit Breaker to CLOSED state"""
+    omr_processor.attendance_cb.reset()
+    return jsonify({
+        'message': 'Circuit Breaker has been reset to CLOSED',
+        'circuit_breaker': omr_processor.attendance_cb.get_state()
+    }), 200
+
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5004))
     debug_mode = os.getenv('FLASK_ENV', 'development') == 'development'

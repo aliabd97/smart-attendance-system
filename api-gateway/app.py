@@ -4,7 +4,7 @@ Port: 5000
 Central entry point for all microservices with JWT authentication
 """
 
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
 import jwt
@@ -29,7 +29,6 @@ SERVICES = {
     'attendance': os.getenv('ATTENDANCE_SERVICE_URL', 'http://localhost:5005'),
     'reporting': os.getenv('REPORTING_SERVICE_URL', 'http://localhost:5009'),
     'auth': os.getenv('AUTH_SERVICE_URL', 'http://localhost:5007'),
-    'registry': os.getenv('REGISTRY_SERVICE_URL', 'http://localhost:5008'),
 }
 
 
@@ -63,15 +62,16 @@ def validate_token():
 
 
 @app.route('/')
-def dashboard():
-    """Serve the professional admin dashboard"""
-    return send_from_directory('static', 'dashboard-professional.html')
-
-
-@app.route('/simple')
-def simple_dashboard():
-    """Serve the simple dashboard (fallback)"""
-    return send_from_directory('static', 'dashboard.html')
+def index():
+    """API Gateway Root - Use Next.js Dashboard at http://localhost:3000"""
+    return jsonify({
+        'service': 'API Gateway',
+        'status': 'healthy',
+        'message': 'Welcome to Smart Attendance System API',
+        'frontend': 'http://localhost:3000',
+        'docs': '/api/services',
+        'health': '/health'
+    }), 200
 
 
 @app.route('/health')
@@ -141,21 +141,15 @@ def auth_route(path):
 
 # Protected routes - require authentication
 
-# Route for /api/<service> (no path)
-@app.route('/api/<service>', methods=['GET', 'POST', 'PUT', 'DELETE'])
-def gateway_route_no_path(service):
-    """Gateway route for service root endpoints"""
-    return gateway_route(service, '')
-
-
+# Route for /api/<service>/<path>
 @app.route('/api/<service>/<path:path>', methods=['GET', 'POST', 'PUT', 'DELETE'])
-def gateway_route(service, path=''):
+def gateway_route(service, path):
     """
     Main gateway - validates token then forwards request to appropriate service
 
     Args:
         service: Service name (students, courses, etc.)
-        path: API path within the service (optional)
+        path: API path within the service
     """
     # Validate token
     user, error, status = validate_token()
@@ -169,13 +163,8 @@ def gateway_route(service, path=''):
             'available_services': list(SERVICES.keys())
         }), 404
 
-    # Build target URL
-    # If path is empty, forward to /api/<service>
-    # If path exists, forward to /api/<service>/<path>
-    if path:
-        url = f"{SERVICES[service]}/api/{service}/{path}"
-    else:
-        url = f"{SERVICES[service]}/api/{service}"
+    # Build target URL - forward to service's /api/<path>
+    url = f"{SERVICES[service]}/api/{path}"
 
     # Add user info to headers (so services know who is making the request)
     headers = {
@@ -370,6 +359,61 @@ def unenroll_student(course_id):
     except Exception as e:
         print(f"❌ Error unenrolling student: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/architecture/status', methods=['GET'])
+def architecture_status():
+    """
+    Architecture Status - Shows all Software Architecture concepts in this project.
+    Useful for demo: shows service health, Circuit Breaker state, and RabbitMQ status.
+    """
+    # Check each service health
+    services_status = {}
+    for name, url in SERVICES.items():
+        try:
+            response = requests.get(f"{url}/", timeout=3)
+            services_status[name] = 'healthy' if response.status_code == 200 else 'unhealthy'
+        except:
+            services_status[name] = 'unreachable'
+
+    # Get Circuit Breaker status from PDF Processing Service
+    cb_status = None
+    try:
+        cb_response = requests.get(f"{SERVICES['pdf-processing']}/api/pdf/cb-status", timeout=3)
+        if cb_response.status_code == 200:
+            cb_status = cb_response.json()
+    except:
+        cb_status = {'error': 'PDF Processing Service unreachable'}
+
+    # Get RabbitMQ events from Course Service
+    rabbitmq_status = None
+    try:
+        rmq_response = requests.get(f"{SERVICES['courses']}/api/courses/attendance-events", timeout=3)
+        if rmq_response.status_code == 200:
+            rmq_data = rmq_response.json()
+            rabbitmq_status = {
+                'events_received': rmq_data.get('total', 0),
+                'pattern': rmq_data.get('pattern')
+            }
+    except:
+        rabbitmq_status = {'error': 'Course Service unreachable'}
+
+    return jsonify({
+        'architecture_patterns': {
+            'microservices': f'{len(SERVICES)} independent services',
+            'api_gateway': 'This service (port 5000) - single entry point',
+            'database_per_service': 'Each service has its own SQLite database',
+            'health_check': 'Every service exposes /health endpoint',
+            'authentication': 'JWT tokens via Auth Service',
+            'circuit_breaker_manual': 'State Pattern (CLOSED/OPEN/HALF_OPEN) in PDF Processing',
+            'circuit_breaker_library': 'pybreaker library (same concept, less code)',
+            'message_broker': 'RabbitMQ for async event communication',
+            'choreography': 'Attendance -> RabbitMQ -> Course (no central coordinator)'
+        },
+        'services': services_status,
+        'circuit_breaker': cb_status,
+        'rabbitmq': rabbitmq_status
+    }), 200
 
 
 @app.errorhandler(404)

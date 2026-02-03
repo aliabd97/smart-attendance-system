@@ -3,6 +3,7 @@ Excel Adapter Pattern Implementation
 Adapts legacy Excel student data to modern Student model
 """
 
+from __future__ import annotations
 import openpyxl
 from typing import List, Optional
 import sys
@@ -143,7 +144,7 @@ class ExcelAdapter(IStudentDataSource):
             return self.target_repository.delete_student(student_id)
         return False
 
-    def import_to_repository(self) -> tuple[int, int]:
+    def import_to_repository(self):
         """
         Import all Excel students to target repository
 
