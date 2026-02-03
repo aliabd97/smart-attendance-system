@@ -70,15 +70,15 @@ def on_attendance_event(channel, method, properties, body):
 
 
 def start_rabbitmq_consumer():
-    """Start RabbitMQ consumer in a background thread"""
+    """Start RabbitMQ consumer in a background thread (REQUIRED)"""
     global rabbitmq
-    try:
-        from common.rabbitmq_client import RabbitMQClient
-        rabbitmq = RabbitMQClient()
-        rabbitmq.consume(on_attendance_event)
-    except Exception as e:
-        print(f"[RabbitMQ Consumer] Could not start: {e}")
-        print("[RabbitMQ Consumer] Running without message queue")
+    from common.rabbitmq_client import RabbitMQClient
+
+    print("🔌 [RabbitMQ Consumer] Connecting to RabbitMQ...")
+    rabbitmq = RabbitMQClient()
+    print("✅ [RabbitMQ Consumer] Connected successfully")
+    print("👂 [RabbitMQ Consumer] Listening for attendance events...")
+    rabbitmq.consume(on_attendance_event)
 
 
 # Start consumer in background thread (won't block Flask)

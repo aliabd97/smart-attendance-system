@@ -27,12 +27,10 @@ attendance_repo = AttendanceRepository(db)
 # Initialize service validator
 validator = ServiceValidator()
 
-# Initialize RabbitMQ client (optional)
-try:
-    rabbitmq = RabbitMQClient()
-except:
-    rabbitmq = None
-    print("⚠️ RabbitMQ not available, running without message queue")
+# Initialize RabbitMQ client (REQUIRED for Choreography pattern)
+print("🔌 Connecting to RabbitMQ...")
+rabbitmq = RabbitMQClient()
+print("✅ RabbitMQ connected successfully")
 
 
 @app.route('/')
@@ -92,17 +90,19 @@ def record_attendance():
         if success:
             # Choreography: Publish event to RabbitMQ after successful recording
             # Course Service will consume this event independently
-            if rabbitmq:
-                try:
-                    rabbitmq.publish({
-                        'event': 'attendance_recorded',
-                        'student_id': student_id,
-                        'course_id': course_id,
-                        'date': date,
-                        'status': status
-                    })
-                except Exception as rmq_err:
-                    print(f"[RabbitMQ] Could not publish event: {rmq_err}")
+            try:
+                rabbitmq.publish({
+                    'event': 'attendance_recorded',
+                    'student_id': student_id,
+                    'course_id': course_id,
+                    'date': date,
+                    'status': status
+                })
+                print(f"✅ [RabbitMQ] Published attendance event for student {student_id}")
+            except Exception as rmq_err:
+                print(f"❌ [RabbitMQ] Failed to publish event: {rmq_err}")
+                # Re-raise to fail the request if RabbitMQ is required
+                raise
 
             return jsonify({
                 'message': message,
