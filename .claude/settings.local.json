@@ -45,7 +45,8 @@
       "Bash(start final_test.pdf)",
       "Bash(start:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git rm:*)"
     ]
   }
 }
