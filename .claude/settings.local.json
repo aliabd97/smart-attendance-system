@@ -46,7 +46,11 @@
       "Bash(start:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git rm:*)"
+      "Bash(git rm:*)",
+      "Bash(Get-Process)",
+      "Bash(Where-Object {$_ProcessName -match \"node|python\"})",
+      "Bash(Select-Object ProcessName, Id)",
+      "Bash(Format-Table)"
     ]
   }
 }

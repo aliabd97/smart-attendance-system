@@ -92,7 +92,11 @@ class OMRProcessor:
             images = convert_from_path(pdf_path, dpi=300)
         except Exception as e:
             # If that fails, try common Windows poppler locations
+            # Get project root directory (2 levels up from this file)
+            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+
             poppler_paths = [
+                os.path.join(project_root, 'poppler-24.08.0', 'Library', 'bin'),  # Project poppler
                 r'C:\Program Files\poppler\Library\bin',
                 r'C:\Program Files (x86)\poppler\Library\bin',
                 r'C:\poppler\Library\bin',
