@@ -20,6 +20,7 @@ import {
   LogOut,
   Server,
   UserPlus,
+  Zap,
 } from 'lucide-react'
 
 const navigation = [
@@ -32,6 +33,7 @@ const navigation = [
   { name: 'Bubble Sheets', href: '/dashboard/bubble-sheets', icon: FileText },
   { name: 'OMR Processing', href: '/dashboard/omr', icon: Camera },
   { name: 'Reports', href: '/dashboard/reports', icon: BarChart3 },
+  { name: 'Patterns Demo', href: '/dashboard/patterns', icon: Zap },
   { name: 'System Status', href: '/dashboard/system', icon: Server },
 ]
 

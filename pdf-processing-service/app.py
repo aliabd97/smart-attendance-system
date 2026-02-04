@@ -143,6 +143,7 @@ def process_scanned_sheet():
         # Send to Attendance Service if requested
         send_to_attendance = request.form.get('send_to_attendance', 'true').lower() == 'true'
         attendance_result = None
+        final_status = 'success'
 
         if send_to_attendance and result.get('attendance_records'):
             attendance_service_url = os.getenv(
@@ -153,6 +154,17 @@ def process_scanned_sheet():
                 result['attendance_records'],
                 attendance_service_url
             )
+
+            # Check Circuit Breaker state directly
+            if attendance_result:
+                cb_state = attendance_result.get('circuit_breaker_state', {}).get('state', '')
+
+                if cb_state == 'open':
+                    final_status = 'circuit_breaker_open'
+                elif cb_state == 'half_open':
+                    final_status = 'circuit_breaker_testing'
+                elif attendance_result.get('success', 0) < len(result.get('attendance_records', [])):
+                    final_status = 'partial_success'
 
         # Return response
         return jsonify({
@@ -166,7 +178,7 @@ def process_scanned_sheet():
             'sent_to_attendance_service': send_to_attendance,
             'attendance_result': attendance_result,
             'visualization_url': f'/api/visualization/{job_id}' if output_folder else None,
-            'status': 'success'
+            'status': final_status
         }), 201
 
     except Exception as e:
