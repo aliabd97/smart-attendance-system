@@ -101,6 +101,22 @@ def process_scanned_sheet():
                 'status': 'error'
             }), 400
 
+        # Circuit Breaker: Check state before processing
+        from common.circuit_breaker import CircuitState
+
+        if omr_processor.attendance_cb.state == CircuitState.OPEN:
+            # Check if timeout expired (should attempt reset to HALF_OPEN)
+            if not omr_processor.attendance_cb._should_attempt_reset():
+                # Still in timeout - reject immediately
+                return jsonify({
+                    'error': '🚫 Circuit Breaker OPEN - Request Rejected',
+                    'message': 'Cannot process PDF - Circuit Breaker is OPEN. Wait for timeout to expire.',
+                    'circuit_breaker_state': omr_processor.attendance_cb.get_state(),
+                    'pattern': 'Circuit Breaker (Fail Fast)',
+                    'status': 'circuit_breaker_open'
+                }), 503
+            # else: timeout expired, allow request to proceed (CB will transition to HALF_OPEN during call)
+
         file = request.files['file']
 
         if file.filename == '':
@@ -353,6 +369,7 @@ def get_cb_status():
     """
     return jsonify({
         'circuit_breaker': omr_processor.attendance_cb.get_state(),
+        'circuit_breaker_library': omr_processor.attendance_cb_library.get_state(),
         'description': {
             'closed': 'Normal - requests pass through to Attendance Service',
             'open': 'Failing - requests are rejected immediately (no HTTP call made)',
@@ -468,6 +485,37 @@ def reset_circuit_breaker():
     return jsonify({
         'message': 'Circuit Breaker has been reset to CLOSED',
         'circuit_breaker': omr_processor.attendance_cb.get_state()
+    }), 200
+
+
+@app.route('/api/pdf/cb-logs', methods=['GET'])
+def get_cb_logs():
+    """
+    Get accumulated Circuit Breaker logs.
+    Returns all state transitions and events captured by both Manual and Library CBs.
+    """
+    # Combine logs from both CBs
+    manual_logs = omr_processor.attendance_cb.get_logs()
+    library_logs = omr_processor.attendance_cb_library.get_logs()
+
+    # Merge and sort by timestamp
+    all_logs = manual_logs + library_logs
+    all_logs.sort(key=lambda x: x['timestamp'])
+
+    return jsonify({
+        'logs': all_logs,
+        'circuit_breaker_state': omr_processor.attendance_cb.get_state(),
+        'circuit_breaker_library_state': omr_processor.attendance_cb_library.get_state()
+    }), 200
+
+
+@app.route('/api/pdf/cb-logs', methods=['DELETE'])
+def clear_cb_logs():
+    """Clear Circuit Breaker logs for both Manual and Library CBs"""
+    omr_processor.attendance_cb.clear_logs()
+    omr_processor.attendance_cb_library.clear_logs()
+    return jsonify({
+        'message': 'Logs cleared successfully'
     }), 200
 
 

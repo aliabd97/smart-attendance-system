@@ -171,6 +171,39 @@ def health_check():
     })
 
 
+@app.route('/api/reports/strategy-info', methods=['GET'])
+def get_strategy_info():
+    """
+    Get Strategy Pattern information for Dashboard demo.
+    Returns available formats and current configuration.
+    """
+    return jsonify({
+        'pattern': 'Strategy Pattern',
+        'description': 'Allows runtime selection of report generation algorithms',
+        'default_format': strategy_factory.get_default_format(),
+        'available_formats': strategy_factory.get_available_formats(),
+        'strategies': {
+            'excel': {
+                'name': 'ExcelReportStrategy',
+                'extension': '.xlsx',
+                'description': 'Generates Excel reports with charts and formatting'
+            },
+            'pdf': {
+                'name': 'PDFReportStrategy',
+                'extension': '.pdf',
+                'description': 'Generates PDF reports suitable for printing'
+            },
+            'csv': {
+                'name': 'CSVReportStrategy',
+                'extension': '.csv',
+                'description': 'Generates CSV files for data analysis'
+            }
+        },
+        'factory': 'StrategyFactory with Reflection',
+        'config_file': 'config/report_config.yml'
+    })
+
+
 @app.route('/api/reports/student/<student_id>', methods=['GET'])
 def generate_student_report(student_id):
     """
@@ -183,7 +216,6 @@ def generate_student_report(student_id):
     الميزة الأكاديمية:
     - يستخدم Strategy Pattern: اختيار الصيغة ديناميكياً
     - يستخدم Reflection: تحميل الاستراتيجية من اسم نصي
-    - Open/Closed Principle: إضافة صيغة جديدة بدون تعديل هذا الكود
     """
     try:
         course_id = request.args.get('course_id')

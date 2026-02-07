@@ -49,7 +49,30 @@ class CircuitBreaker:
         self.last_failure_time = None
         self.state = CircuitState.CLOSED
 
-        print(f"[CB:{self.name}] Circuit Breaker initialized - State: CLOSED (threshold={failure_threshold}, timeout={timeout}s)")
+        # Logs buffer for Dashboard (max 100 entries)
+        self.logs = []
+
+        self._log(f"Circuit Breaker initialized - State: CLOSED (threshold={failure_threshold}, timeout={timeout}s)", "info")
+
+    def _log(self, message: str, log_type: str = "info"):
+        """Log message to both console and buffer"""
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        full_message = f"[CB:{self.name}] {message}"
+
+        # Print to console
+        print(full_message)
+
+        # Add to logs buffer
+        self.logs.append({
+            'timestamp': timestamp,
+            'type': log_type,
+            'message': message,
+            'state': self.state.value
+        })
+
+        # Keep only last 100 logs
+        if len(self.logs) > 100:
+            self.logs = self.logs[-100:]
 
     def call(self, func: Callable, *args, **kwargs) -> Any:
         """
@@ -62,10 +85,10 @@ class CircuitBreaker:
             if self._should_attempt_reset():
                 old_state = self.state.value
                 self.state = CircuitState.HALF_OPEN
-                print(f"[CB:{self.name}] State: {old_state.upper()} -> HALF_OPEN (timeout expired, testing service...)")
+                self._log(f"State: {old_state.upper()} -> HALF_OPEN (timeout expired, testing service...)", "warning")
             else:
                 remaining = self._time_until_retry()
-                print(f"[CB:{self.name}] Request REJECTED - circuit is OPEN (retry in {remaining}s)")
+                self._log(f"Request REJECTED - circuit is OPEN (retry in {remaining}s)", "error")
                 raise Exception(
                     f"Circuit breaker [{self.name}] is OPEN - service unavailable (retry in {remaining}s)"
                 )
@@ -83,18 +106,18 @@ class CircuitBreaker:
         """Handle successful call"""
         if self.state == CircuitState.HALF_OPEN:
             self.success_count += 1
-            print(f"[CB:{self.name}] HALF_OPEN test success ({self.success_count}/{self.success_threshold})")
+            self._log(f"HALF_OPEN test success ({self.success_count}/{self.success_threshold})", "success")
 
             if self.success_count >= self.success_threshold:
                 old_state = self.state.value
                 self.state = CircuitState.CLOSED
                 self.success_count = 0
                 self.failure_count = 0
-                print(f"[CB:{self.name}] State: {old_state.upper()} -> CLOSED (service recovered!)")
+                self._log(f"State: {old_state.upper()} -> CLOSED (service recovered!)", "success")
         else:
             # Reset failure count on success in CLOSED state
             if self.failure_count > 0:
-                print(f"[CB:{self.name}] Success - failure count reset to 0")
+                self._log(f"Success - failure count reset to 0", "success")
             self.failure_count = 0
 
     def _on_failure(self):
@@ -106,14 +129,14 @@ class CircuitBreaker:
             old_state = self.state.value
             self.state = CircuitState.OPEN
             self.success_count = 0
-            print(f"[CB:{self.name}] State: {old_state.upper()} -> OPEN (test failed, service still down)")
+            self._log(f"State: {old_state.upper()} -> OPEN (test failed, service still down)", "error")
 
         elif self.failure_count >= self.failure_threshold:
             old_state = self.state.value
             self.state = CircuitState.OPEN
-            print(f"[CB:{self.name}] State: {old_state.upper()} -> OPEN (reason: {self.failure_count} consecutive failures)")
+            self._log(f"State: {old_state.upper()} -> OPEN (reason: {self.failure_count} consecutive failures)", "error")
         else:
-            print(f"[CB:{self.name}] Failure {self.failure_count}/{self.failure_threshold} - State: CLOSED")
+            self._log(f"Failure {self.failure_count}/{self.failure_threshold} - State: CLOSED", "warning")
 
     def _should_attempt_reset(self) -> bool:
         """Check if enough time has passed to try again"""
@@ -135,7 +158,7 @@ class CircuitBreaker:
         self.failure_count = 0
         self.success_count = 0
         self.last_failure_time = None
-        print(f"[CB:{self.name}] Manual reset: {old_state.upper()} -> CLOSED")
+        self._log(f"Manual reset: {old_state.upper()} -> CLOSED", "info")
 
     def get_state(self) -> dict:
         """Get current circuit breaker state as dictionary"""
@@ -149,3 +172,11 @@ class CircuitBreaker:
             'time_until_retry': self._time_until_retry() if self.state == CircuitState.OPEN else 0,
             'last_failure_time': self.last_failure_time.isoformat() if self.last_failure_time else None
         }
+
+    def get_logs(self) -> list:
+        """Get accumulated logs"""
+        return self.logs.copy()
+
+    def clear_logs(self):
+        """Clear logs buffer"""
+        self.logs = []

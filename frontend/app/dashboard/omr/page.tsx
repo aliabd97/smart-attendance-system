@@ -37,6 +37,16 @@ export default function OMRPage() {
 
       const result = await response.json()
 
+      // Determine attendance recording status
+      let attendanceStatus = ''
+      if (result.status === 'success') {
+        attendanceStatus = '\n✅ Attendance recorded in the system'
+      } else if (result.status === 'partial_success') {
+        attendanceStatus = '\n❌ Attendance was not recorded in the system'
+      } else if (result.status === 'circuit_breaker_open') {
+        attendanceStatus = '\n🚫 Circuit Breaker OPEN - Attendance not recorded'
+      }
+
       alert(
         `OMR Processing Complete!\n\n` +
         `Job ID: ${result.job_id}\n` +
@@ -45,7 +55,8 @@ export default function OMRPage() {
         `Present: ${result.present}\n` +
         `Absent: ${result.absent}\n` +
         `Attendance: ${result.attendance_percentage}%\n` +
-        `Status: ${result.status}`
+        `Status: ${result.status}` +
+        attendanceStatus
       )
 
       // Reset file selection

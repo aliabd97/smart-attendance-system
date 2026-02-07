@@ -11,7 +11,6 @@ Strategy Factory with Reflection Programming
 - Reflection Programming: تحميل ديناميكي للفئات
 - Factory Pattern: إنشاء الكائنات بطريقة موحدة
 - Strategy Pattern: اختيار الاستراتيجية في وقت التشغيل
-- SOLID Principles: Open/Closed, Single Responsibility
 """
 
 import os
@@ -256,9 +255,8 @@ def example_usage():
     print("=" * 60)
     print("الفوائد الأكاديمية:")
     print("  1. Reflection: تحميل الفئات ديناميكياً من أسماء نصية")
-    print("  2. Open/Closed: إضافة صيغة جديدة = ملف جديد فقط")
-    print("  3. Strategy Pattern: اختيار الاستراتيجية في وقت التشغيل")
-    print("  4. Configuration-driven: السلوك يُحدد من ملف خارجي")
+    print("  2. Strategy Pattern: اختيار الاستراتيجية في وقت التشغيل")
+    print("  3. Configuration-driven: السلوك يُحدد من ملف خارجي")
     print("=" * 60 + "\n")
 
 

@@ -32,11 +32,21 @@ class OMRProcessor:
 
         # Circuit Breaker: protects calls from PDF Processing (Client) to Attendance Service (Server)
         from common.circuit_breaker import CircuitBreaker
+        from common.circuit_breaker_library import LibraryCircuitBreaker
+
+        # Manual Implementation
         self.attendance_cb = CircuitBreaker(
             name="attendance-service",
             failure_threshold=3,
             timeout=15,
             success_threshold=2
+        )
+
+        # Library Implementation (pybreaker) - for comparison
+        self.attendance_cb_library = LibraryCircuitBreaker(
+            name="attendance-service-lib",
+            failure_threshold=3,
+            timeout=15
         )
 
     def convert_pdf_to_images(
@@ -400,15 +410,36 @@ class OMRProcessor:
                         raise Exception(f"HTTP {response.status_code}: {response.text}")
                     return response
 
+                # Test with Manual CB (actual call)
                 response = self.attendance_cb.call(send_single_record)
+
+                # Also test with Library CB (for comparison - uses same result)
+                try:
+                    self.attendance_cb_library.call(lambda: response)
+                except Exception:
+                    pass  # Library CB might be in different state
+
                 success_count += 1
 
             except Exception as e:
                 error_msg = str(e)
-                if "circuit is OPEN" in error_msg:
+                if "circuit is OPEN" in error_msg or "circuit breaker" in error_msg.lower():
                     cb_rejected_count += 1
+
+                    # Also test Library CB to keep states in sync
+                    try:
+                        self.attendance_cb_library.call(send_single_record)
+                    except Exception:
+                        pass  # Expected to fail
                 else:
                     error_count += 1
+
+                    # Record failure in Library CB too
+                    try:
+                        self.attendance_cb_library.call(send_single_record)
+                    except Exception:
+                        pass
+
                 errors.append({
                     'student_id': record['student_id'],
                     'error': error_msg
@@ -420,6 +451,7 @@ class OMRProcessor:
             'errors': error_count,
             'cb_rejected': cb_rejected_count,
             'circuit_breaker_state': self.attendance_cb.get_state(),
+            'circuit_breaker_library_state': self.attendance_cb_library.get_state(),
             'error_details': errors if errors else None,
             'status': 'success' if error_count == 0 and cb_rejected_count == 0 else 'partial_success'
         }

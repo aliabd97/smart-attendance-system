@@ -22,7 +22,7 @@ app = Flask(__name__)
 CORS(app)
 
 # JWT Secret Key (In production: use environment variable)
-SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'your-secret-key-change-in-production-2024')
+SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'smart-attendance-system-jwt-secret-key-2024-x7k9m2')
 
 # Initialize database for user management
 db = Database('auth.db')

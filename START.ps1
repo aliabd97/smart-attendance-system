@@ -23,6 +23,41 @@ $services = @(
 )
 
 # =========================================
+# Check RabbitMQ (Required for Choreography Pattern)
+# =========================================
+Write-Host "Checking RabbitMQ status..." -ForegroundColor Yellow
+
+$rabbitmqRunning = $false
+try {
+    $rabbitmqProcess = Get-Process -Name "erl" -ErrorAction SilentlyContinue
+    if ($rabbitmqProcess) {
+        $rabbitmqRunning = $true
+    }
+
+    # Also check if port 5672 is in use (RabbitMQ default port)
+    $rabbitmqPort = Get-NetTCPConnection -LocalPort 5672 -ErrorAction SilentlyContinue
+    if ($rabbitmqPort) {
+        $rabbitmqRunning = $true
+    }
+} catch {
+    # Silent fail
+}
+
+if ($rabbitmqRunning) {
+    Write-Host "  ✓ RabbitMQ is running (Port 5672)" -ForegroundColor Green
+    Write-Host "  ✓ Management UI: http://localhost:15672" -ForegroundColor Green
+} else {
+    Write-Host "  ⚠ RabbitMQ is NOT running!" -ForegroundColor Red
+    Write-Host "  → Choreography Pattern requires RabbitMQ" -ForegroundColor Yellow
+    Write-Host "  → Start RabbitMQ: rabbitmq-server (or from Windows Services)" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  Continue without RabbitMQ? (Choreography will not work)" -ForegroundColor Yellow
+    $response = Read-Host "  Press Enter to continue, or Ctrl+C to cancel"
+}
+
+Write-Host ""
+
+# =========================================
 # Clean up ports before starting
 # =========================================
 Write-Host "Checking for running services on ports..." -ForegroundColor Yellow
@@ -111,6 +146,10 @@ Write-Host "  Bubble Sheet Generator: http://localhost:5003" -ForegroundColor Wh
 Write-Host "  PDF Processing:         http://localhost:5004" -ForegroundColor White
 Write-Host "  Reporting Service:      http://localhost:5009" -ForegroundColor White
 Write-Host "  API Gateway:            http://localhost:5000" -ForegroundColor White
+Write-Host ""
+Write-Host "  Message Broker:" -ForegroundColor Yellow
+Write-Host "  -----------------" -ForegroundColor DarkGray
+Write-Host "  RabbitMQ:               http://localhost:15672 (guest/guest)" -ForegroundColor White
 Write-Host ""
 Write-Host "  ================================================" -ForegroundColor Magenta
 Write-Host "  ADMIN DASHBOARD:  http://localhost:3000        " -ForegroundColor Magenta

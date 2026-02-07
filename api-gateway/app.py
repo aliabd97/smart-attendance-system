@@ -18,7 +18,7 @@ app = Flask(__name__)
 CORS(app)
 
 # JWT Secret Key (must match auth-service)
-SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'your-secret-key-change-in-production-2024')
+SECRET_KEY = os.getenv('JWT_SECRET_KEY', 'smart-attendance-system-jwt-secret-key-2024-x7k9m2')
 
 # Service registry - maps service names to URLs
 SERVICES = {
